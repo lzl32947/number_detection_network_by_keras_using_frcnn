@@ -25,11 +25,3 @@ def get_rpn(net, feature_map_name, num_anchors):
     # 返回的是分类层、回归层和原始层
     return ['classification', 'rpn_out_regress', feature_map_name]
 
-
-if __name__ == '__main__':
-    net, result_layer = ResNet50()
-    output_name = get_rpn(net, result_layer, 9)
-    output_layer = [net[i] for i in output_name]
-    model_rpn = Model(net['inputs'], output_layer)
-    plot_model(model_rpn, to_file="rpn_model.png", show_layer_names=True, show_shapes=True)
-    model_rpn.summary()

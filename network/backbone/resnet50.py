@@ -93,12 +93,3 @@ def ResNet50():
     net, layer_name = identity_block(net, layer_name, 3, [256, 256, 1024], stage=4, block='f')
 
     return net, layer_name
-
-
-if __name__ == "__main__":
-    net, result_layer = ResNet50()
-    model = Model(inputs=net["inputs"], outputs=net[result_layer])
-    plot_model(model, to_file="resnet.png", show_shapes=True, show_layer_names=True)
-    model.summary()
-    for i in net.keys():
-        print(i)

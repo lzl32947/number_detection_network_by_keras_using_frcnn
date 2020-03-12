@@ -86,14 +86,3 @@ def get_classifier(base_layers, input_rois, num_rois, nb_classes=21, trainable=F
     out_regr = TimeDistributed(Dense(4 * (nb_classes - 1), activation='linear', kernel_initializer='zero'),
                                name='dense_regress_{}'.format(nb_classes))(out)
     return [out_class, out_regr]
-
-
-if __name__ == '__main__':
-    # roi_input 应该是输入的ROI
-    roi_input = Input(shape=(12996, 4))
-    # feature map input 应该是经过resnet后输出的图像
-    feature_map_input = Input(shape=(38, 38, 1024))
-    classifier = get_classifier(feature_map_input, roi_input, 32, nb_classes=11, trainable=True)
-    model_classifier_only = Model([feature_map_input, roi_input], classifier)
-    plot_model(model_classifier_only, to_file="classifier.png", show_shapes=True, show_layer_names=True)
-    model_classifier_only.summary()
