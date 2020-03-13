@@ -71,24 +71,3 @@ def classifier_layers(x, input_shape, trainable=False):
     return x
 
 
-def get_classifier(num_rois, nb_classes=21, trainable=False):
-    roi_input = Input(shape=(None, 4))
-    feature_map_input = Input(shape=(None, None, 1024))
-    pooling_regions = 14
-    input_shape = (num_rois, 14, 14, 1024)
-    # proposal 层相当于 [base_layers,input_rois]
-    out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([feature_map_input, roi_input])
-    # 以下是对于feature做操作
-    out = classifier_layers(out_roi_pool, input_shape=input_shape, trainable=True)
-    out = TimeDistributed(Flatten())(out)
-    # 输出bbox_pred
-    out_class = TimeDistributed(Dense(nb_classes, activation='softmax', kernel_initializer='zero'),
-                                name='dense_class_{}'.format(nb_classes))(out)
-    # 输出class_prob
-    out_regr = TimeDistributed(Dense(4 * (nb_classes - 1), activation='linear', kernel_initializer='zero'),
-                               name='dense_regress_{}'.format(nb_classes))(out)
-    model = Model([feature_map_input, roi_input], [out_class, out_regr])
-    return model
-
-def get_classifier_model():
-    return get_classifier(32, nb_classes=11, trainable=True)
