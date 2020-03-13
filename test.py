@@ -1,5 +1,3 @@
-import colorsys
-
 from keras_applications import imagenet_utils
 from network.backbone.resnet50 import ResNet50
 from keras.models import Model
@@ -7,21 +5,13 @@ import tensorflow as tf
 import keras.backend as K
 from keras.layers import *
 import numpy as np
-from PIL import Image, ImageFont, ImageDraw
+from PIL import Image
 from network.classifier.resnet50_classifier import get_classifier
 from network.rpn.common_rpn import get_rpn
 from util.anchors import get_anchors
 from util.decode_util import detection_out, nms_for_out
-
-classifier_regr_std = [8.0, 8.0, 4.0, 4.0]
-class_names = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
-
-hsv_tuples = [(x / len(class_names), 1., 1.)
-              for x in range(len(class_names))]
-colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
-colors = list(
-    map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)),
-        colors))
+from parameters.parameter import NormalParameters
+from util.image_util import draw_result
 
 
 def get_img_output_length(width, height):
@@ -114,10 +104,10 @@ if __name__ == '__main__':
             cls_num = np.argmax(P_cls[0, ii, :])
 
             (tx, ty, tw, th) = P_regr[0, ii, 4 * cls_num:4 * (cls_num + 1)]
-            tx /= classifier_regr_std[0]
-            ty /= classifier_regr_std[1]
-            tw /= classifier_regr_std[2]
-            th /= classifier_regr_std[3]
+            tx /= NormalParameters().classifier_regr_std[0]
+            ty /= NormalParameters().classifier_regr_std[1]
+            tw /= NormalParameters().classifier_regr_std[2]
+            th /= NormalParameters().classifier_regr_std[3]
 
             cx = x + w / 2.
             cy = y + h / 2.
@@ -150,56 +140,5 @@ if __name__ == '__main__':
     boxes[:, 2] = boxes[:, 2] * 16 / width
     boxes[:, 3] = boxes[:, 3] * 16 / height
     results = np.array(
-        nms_for_out(sess,np.array(labels), np.array(probs), np.array(boxes), 11 - 1, 0.4))
-
-    if len(boxes) == 0:
-        image.show()
-    top_label_indices = results[:, 0]
-    top_conf = results[:, 1]
-    boxes = results[:, 2:]
-    boxes[:, 0] = boxes[:, 0] * 600
-    boxes[:, 1] = boxes[:, 1] * 600
-    boxes[:, 2] = boxes[:, 2] * 600
-    boxes[:, 3] = boxes[:, 3] * 600
-
-    font = ImageFont.truetype(font='model_data/simhei.ttf',
-                              size=np.floor(3e-2 * np.shape(image)[1] + 0.5).astype('int32'))
-
-    thickness = (np.shape(image)[0] + np.shape(image)[1]) // width
-    for i, c in enumerate(top_label_indices):
-        predicted_class = class_names[int(c)]
-        score = top_conf[i]
-
-        left, top, right, bottom = boxes[i]
-        top = top - 5
-        left = left - 5
-        bottom = bottom + 5
-        right = right + 5
-
-        top = max(0, np.floor(top + 0.5).astype('int32'))
-        left = max(0, np.floor(left + 0.5).astype('int32'))
-        bottom = min(np.shape(image)[0], np.floor(bottom + 0.5).astype('int32'))
-        right = min(np.shape(image)[1], np.floor(right + 0.5).astype('int32'))
-
-        # 画框框
-        label = '{} {:.2f}'.format(predicted_class, score)
-        draw = ImageDraw.Draw(image)
-        label_size = draw.textsize(label, font)
-        label = label.encode('utf-8')
-        print(label)
-
-        if top - label_size[1] >= 0:
-            text_origin = np.array([left, top - label_size[1]])
-        else:
-            text_origin = np.array([left, top + 1])
-
-        for i in range(thickness):
-            draw.rectangle(
-                [left + i, top + i, right - i, bottom - i],
-                outline=colors[int(c)])
-        draw.rectangle(
-            [tuple(text_origin), tuple(text_origin + label_size)],
-            fill=colors[int(c)])
-        draw.text(text_origin, str(label, 'UTF-8'), fill=(0, 0, 0), font=font)
-        del draw
-    image.show()
+        nms_for_out(sess, np.array(labels), np.array(probs), np.array(boxes), 11 - 1, 0.4))
+    draw_result(image, results, boxes, width)
