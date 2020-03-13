@@ -57,14 +57,17 @@ def predict_images(image_list, configs):
         bboxes = []
         probs = []
         labels = []
+        # divide the 300 result to 32 to reduce the memory usage
         for jk in range(R.shape[0] // 32 + 1):
             ROIs = np.expand_dims(R[32 * jk:32 * (jk + 1), :], axis=0)
 
             if ROIs.shape[1] == 0:
+                # None left, break
                 break
 
             if jk == R.shape[0] // 32:
-                # pad R
+                # This indicates that the batch is the last batch.
+                # pad R with the first entry of this batch
                 curr_shape = ROIs.shape
                 target_shape = (curr_shape[0], 32, curr_shape[2])
                 ROIs_padded = np.zeros(target_shape).astype(ROIs.dtype)
@@ -72,18 +75,19 @@ def predict_images(image_list, configs):
                 ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
                 ROIs = ROIs_padded
 
+            # P_cls has the shape (1,32,11)
+            # P_regr has the shape (1,32,40)
             [P_cls, P_regr] = model_classifier.predict([base_layer, ROIs])
 
             for ii in range(P_cls.shape[1]):
+                # if the area is the GT or has the greater chance to be the background then pass
                 if np.max(P_cls[0, ii, :]) < 0.3 or np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
                     continue
 
+                # find one
                 label = np.argmax(P_cls[0, ii, :])
-
                 (x, y, w, h) = ROIs[0, ii, :]
-
                 cls_num = np.argmax(P_cls[0, ii, :])
-
                 (tx, ty, tw, th) = P_regr[0, ii, 4 * cls_num:4 * (cls_num + 1)]
                 tx /= Config.classifier_regr_std[0]
                 ty /= Config.classifier_regr_std[1]
@@ -108,6 +112,8 @@ def predict_images(image_list, configs):
                 x2 = int(round(x2))
                 y2 = int(round(y2))
 
+                # to generate the x_min,y_min,x_max,y_max in the feature map for running the NMS
+
                 bboxes.append([x1, y1, x2, y2])
                 probs.append(np.max(P_cls[0, ii, :]))
                 labels.append(label)
@@ -116,6 +122,7 @@ def predict_images(image_list, configs):
         labels = np.array(labels)
         probs = np.array(probs)
         boxes = np.array(bboxes, dtype=np.float32)
+        # reset to decimal number for running the nms
         boxes[:, 0] = boxes[:, 0] * 16 / 600
         boxes[:, 1] = boxes[:, 1] * 16 / 600
         boxes[:, 2] = boxes[:, 2] * 16 / 600

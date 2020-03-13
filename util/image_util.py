@@ -5,11 +5,13 @@ from config.configs import Config
 
 
 def draw_result(image, results, boxes):
+    # no result
     if len(boxes) == 0:
         image.show()
     top_label_indices = results[:, 0]
     top_conf = results[:, 1]
     boxes = results[:, 2:]
+    # change it to real_size
     boxes[:, 0] = boxes[:, 0] * 600
     boxes[:, 1] = boxes[:, 1] * 600
     boxes[:, 2] = boxes[:, 2] * 600

@@ -5,11 +5,14 @@ import numpy as np
 
 
 def process_single_input(img, config):
+    # Just resize the image to 600,600
     img = img.resize((600, 600), Image.ANTIALIAS)
+    # change the dtype and then for the pixel process
     photo = np.array(img, dtype=np.float32)
-
     photo = process_pixel(photo)
+    # expand the dim to make it has four dimensions
     photo = np.expand_dims(photo, axis=0)
+
     return photo, img
 
 

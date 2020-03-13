@@ -48,9 +48,12 @@ def nms_for_out(sess, all_labels, all_confs, all_bboxes, num_classes, nms):
     nms_out = tf.image.non_max_suppression(boxes, scores,
                                            300,
                                            iou_threshold=nms)
+    # num_classes are the real class (exclude the GT)
     for c in range(num_classes):
         c_pred = []
+        # select the all area that stands for c
         mask = all_labels == c
+        # the result does have the label c
         if len(all_confs[mask]) > 0:
             # 取出得分高于confidence_threshold的框
             boxes_to_process = all_bboxes[mask]
@@ -70,47 +73,53 @@ def nms_for_out(sess, all_labels, all_confs, all_bboxes, num_classes, nms):
 
 
 def rpn_output(sess, predictions, anchors, confidence_threshold=0):
-    # 网络预测的结果
-    # 置信度
+    # predictions[0] stands for the possibility of not GT
     mbox_conf = predictions[0]
+    # predictions[1] stands for the boundary of the selected area
     mbox_loc = predictions[1]
-    # 先验框
+    # the results list is needed if the input batch has more than one item
     results = []
-    # 对每一个图片进行处理
+    # process for each area
     for i in range(len(mbox_loc)):
+        # i in range (0,12996)
         k = []
+        # get the result of the x_min, y_min, x_max, y_max
         decode_bbox = decode_boxes(mbox_loc[i], anchors)
         c_confs = mbox_conf[i, :, 0]
+        # c_confs_m stands for the list of [True, False]
         c_confs_m = c_confs > confidence_threshold
+        # assert there are some selected area instead of 0, e.g. not all black
         if len(c_confs[c_confs_m]) > 0:
-            # 取出得分高于confidence_threshold的框
+            # get the boxes that have higher confidence than threshold
             boxes_to_process = decode_bbox[c_confs_m]
+            # and the confs
             confs_to_process = c_confs[c_confs_m]
+            # prepare the NMS
             boxes = tf.placeholder(dtype='float32', shape=(None, 4))
             scores = tf.placeholder(dtype='float32', shape=(None,))
-            # 进行iou的非极大抑制
+            # run the NMS for IOU to filtrate the repetitive boxes
             feed_dict = {boxes: boxes_to_process,
                          scores: confs_to_process}
             idx = sess.run(tf.image.non_max_suppression(boxes, scores,
-                                                           300,
-                                                           iou_threshold=0.7), feed_dict=feed_dict)
-            # 取出在非极大抑制中效果较好的内容
+                                                        300,
+                                                        iou_threshold=0.7), feed_dict=feed_dict)
+            # get the best result in the result
             good_boxes = boxes_to_process[idx]
+            # and the confs
             confs = confs_to_process[idx][:, None]
-            # 将置信度、框的位置进行堆叠。
+            # concatenate the both
             c_pred = np.concatenate((confs, good_boxes),
                                     axis=1)
-            # 添加进result里
+            # add to k
             k.extend(c_pred)
 
-        if len(k) > 0:
-            # 按照置信度进行排序
-            k = np.array(k)
-            argsort = np.argsort(k[:, 1])[::-1]
-            k = k[argsort]
-            # 选出置信度最大的keep_top_k个
-            k = k[:300]
+            if len(k) > 0:
+                # 按照置信度进行排序
+                k = np.array(k)
+                argsort = np.argsort(k[:, 1])[::-1]
+                k = k[argsort]
+                # 选出置信度最大的keep_top_k个
+                k = k[:300]
         results.append(k)
-    # 获得，在所有预测结果里面，置信度比较高的框
-    # 还有，利用先验框和Retinanet的预测结果，处理获得了真实框（预测框）的位置
+
     return results
