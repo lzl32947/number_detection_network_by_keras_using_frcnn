@@ -1,6 +1,8 @@
 import numpy as np
 import tensorflow as tf
 
+from config.configs import Config
+
 
 def decode_boxes(mbox_loc, mbox_priorbox):
     # 获得先验框的宽与高
@@ -39,56 +41,6 @@ def decode_boxes(mbox_loc, mbox_priorbox):
     return decode_bbox
 
 
-def detection_out(session, predictions, mbox_priorbox, num_classes, keep_top_k=300,
-                  confidence_threshold=0.5):
-    # 网络预测的结果
-    # 置信度
-    mbox_conf = predictions[0]
-    mbox_loc = predictions[1]
-    # 先验框
-    mbox_priorbox = mbox_priorbox
-    results = []
-    # 对每一个图片进行处理
-    for i in range(len(mbox_loc)):
-        results.append([])
-        decode_bbox = decode_boxes(mbox_loc[i], mbox_priorbox)
-        for c in range(num_classes):
-            c_confs = mbox_conf[i, :, c]
-            c_confs_m = c_confs > confidence_threshold
-            if len(c_confs[c_confs_m]) > 0:
-                # 取出得分高于confidence_threshold的框
-                boxes_to_process = decode_bbox[c_confs_m]
-                confs_to_process = c_confs[c_confs_m]
-                boxes = tf.placeholder(dtype='float32', shape=(None, 4))
-                scores = tf.placeholder(dtype='float32', shape=(None,))
-                # 进行iou的非极大抑制
-                feed_dict = {boxes: boxes_to_process,
-                             scores: confs_to_process}
-                idx = session.run(tf.image.non_max_suppression(boxes, scores,
-                                                               300,
-                                                               iou_threshold=0.7), feed_dict=feed_dict)
-                # 取出在非极大抑制中效果较好的内容
-                good_boxes = boxes_to_process[idx]
-                confs = confs_to_process[idx][:, None]
-                # 将label、置信度、框的位置进行堆叠。
-                labels = c * np.ones((len(idx), 1))
-                c_pred = np.concatenate((labels, confs, good_boxes),
-                                        axis=1)
-                # 添加进result里
-                results[-1].extend(c_pred)
-
-        if len(results[-1]) > 0:
-            # 按照置信度进行排序
-            results[-1] = np.array(results[-1])
-            argsort = np.argsort(results[-1][:, 1])[::-1]
-            results[-1] = results[-1][argsort]
-            # 选出置信度最大的keep_top_k个
-            results[-1] = results[-1][:keep_top_k]
-    # 获得，在所有预测结果里面，置信度比较高的框
-    # 还有，利用先验框和Retinanet的预测结果，处理获得了真实框（预测框）的位置
-    return results
-
-
 def nms_for_out(sess, all_labels, all_confs, all_bboxes, num_classes, nms):
     results = []
     boxes = tf.placeholder(dtype='float32', shape=(None, 4))
@@ -114,4 +66,51 @@ def nms_for_out(sess, all_labels, all_confs, all_bboxes, num_classes, nms):
             labels = c * np.ones((len(idx), 1))
             c_pred = np.concatenate((labels, confs, good_boxes), axis=1)
         results.extend(c_pred)
+    return results
+
+
+def rpn_output(sess, predictions, anchors, confidence_threshold=0):
+    # 网络预测的结果
+    # 置信度
+    mbox_conf = predictions[0]
+    mbox_loc = predictions[1]
+    # 先验框
+    results = []
+    # 对每一个图片进行处理
+    for i in range(len(mbox_loc)):
+        k = []
+        decode_bbox = decode_boxes(mbox_loc[i], anchors)
+        c_confs = mbox_conf[i, :, 0]
+        c_confs_m = c_confs > confidence_threshold
+        if len(c_confs[c_confs_m]) > 0:
+            # 取出得分高于confidence_threshold的框
+            boxes_to_process = decode_bbox[c_confs_m]
+            confs_to_process = c_confs[c_confs_m]
+            boxes = tf.placeholder(dtype='float32', shape=(None, 4))
+            scores = tf.placeholder(dtype='float32', shape=(None,))
+            # 进行iou的非极大抑制
+            feed_dict = {boxes: boxes_to_process,
+                         scores: confs_to_process}
+            idx = sess.run(tf.image.non_max_suppression(boxes, scores,
+                                                           300,
+                                                           iou_threshold=0.7), feed_dict=feed_dict)
+            # 取出在非极大抑制中效果较好的内容
+            good_boxes = boxes_to_process[idx]
+            confs = confs_to_process[idx][:, None]
+            # 将置信度、框的位置进行堆叠。
+            c_pred = np.concatenate((confs, good_boxes),
+                                    axis=1)
+            # 添加进result里
+            k.extend(c_pred)
+
+        if len(k) > 0:
+            # 按照置信度进行排序
+            k = np.array(k)
+            argsort = np.argsort(k[:, 1])[::-1]
+            k = k[argsort]
+            # 选出置信度最大的keep_top_k个
+            k = k[:300]
+        results.append(k)
+    # 获得，在所有预测结果里面，置信度比较高的框
+    # 还有，利用先验框和Retinanet的预测结果，处理获得了真实框（预测框）的位置
     return results

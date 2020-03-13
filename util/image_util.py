@@ -1,10 +1,10 @@
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from parameters.parameter import NormalParameters
+from config.configs import Config
 
 
-def draw_result(image, results, boxes, width):
+def draw_result(image, results, boxes):
     if len(boxes) == 0:
         image.show()
     top_label_indices = results[:, 0]
@@ -17,9 +17,9 @@ def draw_result(image, results, boxes, width):
     font = ImageFont.truetype(font='model_data/simhei.ttf',
                               size=np.floor(3e-2 * np.shape(image)[1] + 0.5).astype('int32'))
 
-    thickness = (np.shape(image)[0] + np.shape(image)[1]) // width
+    thickness = (np.shape(image)[0] + np.shape(image)[1]) // 600
     for i, c in enumerate(top_label_indices):
-        predicted_class = NormalParameters().class_names[int(c)]
+        predicted_class = Config.class_names[int(c)]
         score = top_conf[i]
 
         left, top, right, bottom = boxes[i]
@@ -48,10 +48,10 @@ def draw_result(image, results, boxes, width):
         for i in range(thickness):
             draw.rectangle(
                 [left + i, top + i, right - i, bottom - i],
-                outline=NormalParameters().colors[int(c)])
+                outline='blue')
         draw.rectangle(
             [tuple(text_origin), tuple(text_origin + label_size)],
-            fill=NormalParameters().colors[int(c)])
+            fill='red')
         draw.text(text_origin, str(label, 'UTF-8'), fill=(0, 0, 0), font=font)
         del draw
     image.show()
