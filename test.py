@@ -1,4 +1,6 @@
 from keras_applications import imagenet_utils
+
+from config.configs import Config
 from network.backbone.resnet50 import ResNet50
 from keras.models import Model
 import tensorflow as tf
@@ -9,8 +11,7 @@ from PIL import Image
 from network.classifier.resnet50_classifier import get_classifier
 from network.rpn.common_rpn import get_rpn
 from util.anchors import get_anchors
-from util.decode_util import detection_out, nms_for_out
-from parameters.parameter import NormalParameters
+from util.decode_util import nms_for_out, rpn_output
 from util.image_util import draw_result
 
 
@@ -37,14 +38,13 @@ if __name__ == '__main__':
     output_layer = [net[i] for i in output_name]
     model_rpn = Model(net['inputs'], output_layer)
 
-    model_rpn.load_weights('weight/epoch027-loss0.328-rpn0.148-roi0.180.h5', by_name=True)
+    model_rpn.load_weights('weight/number_weight.h5', by_name=True)
 
     roi_input = Input(shape=(None, 4))
     feature_map_input = Input(shape=(None, None, 1024))
-    classifier = get_classifier(feature_map_input, roi_input, 32, nb_classes=11, trainable=True)
-    model_classifier = Model([feature_map_input, roi_input], classifier)
+    model_classifier = get_classifier(32, nb_classes=11, trainable=True)
 
-    model_classifier.load_weights('weight/epoch027-loss0.328-rpn0.148-roi0.180.h5', by_name=True, skip_mismatch=True)
+    model_classifier.load_weights('weight/number_weight.h5', by_name=True, skip_mismatch=True)
 
     image = Image.open(r"G:\data_stored\test_line\000651.jpg")
     image_shape = np.array(np.shape(image)[0:2])
@@ -61,8 +61,8 @@ if __name__ == '__main__':
     w_, h_ = get_img_output_length(width, height)
     anchors = get_anchors((w_, h_), width, height)
 
-    rpn_results = detection_out(sess, preds, anchors, 1, confidence_threshold=0)
-    R = rpn_results[0][:, 2:]
+    rpn_results = rpn_output(sess, preds, anchors)
+    R = rpn_results[0][:, 1:]
 
     R[:, 0] = np.array(np.round(R[:, 0] * width / 16), dtype=np.int32)
     R[:, 1] = np.array(np.round(R[:, 1] * height / 16), dtype=np.int32)
@@ -104,10 +104,10 @@ if __name__ == '__main__':
             cls_num = np.argmax(P_cls[0, ii, :])
 
             (tx, ty, tw, th) = P_regr[0, ii, 4 * cls_num:4 * (cls_num + 1)]
-            tx /= NormalParameters().classifier_regr_std[0]
-            ty /= NormalParameters().classifier_regr_std[1]
-            tw /= NormalParameters().classifier_regr_std[2]
-            th /= NormalParameters().classifier_regr_std[3]
+            tx /= Config.classifier_regr_std[0]
+            ty /= Config.classifier_regr_std[1]
+            tw /= Config.classifier_regr_std[2]
+            th /= Config.classifier_regr_std[3]
 
             cx = x + w / 2.
             cy = y + h / 2.
