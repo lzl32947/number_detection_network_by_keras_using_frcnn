@@ -1,7 +1,7 @@
 from keras import Model
 from keras.layers import *
 from keras.utils import plot_model
-from parameters.parameter import HyperParameters
+from config.configs import Config
 
 
 def identity_block(net_dict, input_layer_name, kernel_size, filters, stage, block):
