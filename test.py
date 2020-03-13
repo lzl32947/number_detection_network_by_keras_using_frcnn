@@ -11,7 +11,7 @@ from PIL import Image, ImageFont, ImageDraw
 from network.classifier.resnet50_classifier import get_classifier
 from network.rpn.common_rpn import get_rpn
 from util.anchors import get_anchors
-from util.utils import BBoxUtility
+from util.decode_util import detection_out, nms_for_out
 
 classifier_regr_std = [8.0, 8.0, 4.0, 4.0]
 class_names = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
@@ -37,7 +37,6 @@ def get_img_output_length(width, height):
 
 
 if __name__ == '__main__':
-    b_box = BBoxUtility()
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
@@ -72,7 +71,7 @@ if __name__ == '__main__':
     w_, h_ = get_img_output_length(width, height)
     anchors = get_anchors((w_, h_), width, height)
 
-    rpn_results = b_box.detection_out(preds, anchors, 1, confidence_threshold=0)
+    rpn_results = detection_out(sess, preds, anchors, 1, confidence_threshold=0)
     R = rpn_results[0][:, 2:]
 
     R[:, 0] = np.array(np.round(R[:, 0] * width / 16), dtype=np.int32)
@@ -151,7 +150,7 @@ if __name__ == '__main__':
     boxes[:, 2] = boxes[:, 2] * 16 / width
     boxes[:, 3] = boxes[:, 3] * 16 / height
     results = np.array(
-        b_box.nms_for_out(np.array(labels), np.array(probs), np.array(boxes), 11 - 1, 0.4))
+        nms_for_out(sess,np.array(labels), np.array(probs), np.array(boxes), 11 - 1, 0.4))
 
     if len(boxes) == 0:
         image.show()
