@@ -65,8 +65,8 @@ def conv_block(net_dict, input_layer_name, kernel_size, filters, stage, block, s
     return net_dict, res_name_base
 
 
-def ResNet50():
-    img_input = Input(shape=(600, 600, 3))
+def ResNet50(inputs):
+    img_input = inputs
     net = {}
     net['inputs'] = img_input
     net['zero_padding_0'] = ZeroPadding2D((3, 3))(net['inputs'])

@@ -1,5 +1,6 @@
 from keras import Model
 from keras.layers import *
+from keras.utils import plot_model
 
 from layers.ROIPoolingConv import RoiPoolingConv
 from network.backbone.resnet50 import ResNet50
@@ -7,15 +8,17 @@ from network.classifier.resnet50_classifier import classifier_layers
 from network.rpn.common_rpn import get_rpn
 
 
-def get_rpn_layers():
-    net, result_layer = ResNet50()
+def get_rpn_layers(inputs):
+    net, result_layer = ResNet50(inputs)
     output_name = get_rpn(net, result_layer, 9)
     output_layer = [net[i] for i in output_name]
     return net, output_layer
 
 
-def get_rpn_model():
-    net, result = get_rpn_layers()
+def get_rpn_model(inputs):
+    if inputs is None:
+        inputs = Input(shape=(None, None, 3))
+    net, result = get_rpn_layers(inputs)
     model_rpn = Model(net['inputs'], result)
     return model_rpn
 
@@ -37,24 +40,26 @@ def get_classifier_layers(feature_map_input, roi_input, num_rois, nb_classes, tr
     return [out_class, out_regr]
 
 
-def get_classifier_model(num_rois, nb_classes, trainable=False):
-    roi_input = Input(shape=(None, 4))
-    feature_map_input = Input(shape=(None, None, 1024))
+def get_classifier_model(num_rois, nb_classes, trainable=False, feature_map_input=None, roi_input=None):
+    if feature_map_input is None:
+        feature_map_input = Input(shape=(None, None, 1024))
+    if roi_input is None:
+        roi_input = Input(shape=(None, 4))
     result = get_classifier_layers(feature_map_input, roi_input, num_rois, nb_classes, trainable)
     model = Model([feature_map_input, roi_input], result)
     return model
 
 
 def get_all_model():
-    net, result_layer = ResNet50()
-    output_name = get_rpn(net, result_layer, 9)
-    output_layer = [net[i] for i in output_name]
-    model_rpn = Model(net['inputs'], output_layer[:2])
-
+    inputs = Input(shape=(None, None, 3))
     roi_input = Input(shape=(None, 4))
-    feature_map_input = Input(shape=(None, None, 1024))
-    classifier = get_classifier_layers(feature_map_input, roi_input, 32, 11, trainable=True)
-    model_classifier = Model([feature_map_input, roi_input], classifier)
 
-    model_all = Model([net['inputs'], roi_input], output_layer[:2] + classifier)
+    net, output_layer = get_rpn_layers(inputs)
+    model_rpn = Model(inputs, output_layer[:2])
+
+    classifier = get_classifier_layers(output_layer[2], roi_input, 32, nb_classes=11, trainable=True)
+    model_classifier = Model([inputs, roi_input], classifier)
+
+    model_all = Model([inputs, roi_input], output_layer[:2] + classifier)
+    plot_model(model_all, show_shapes=True, show_layer_names=True)
     return model_rpn, model_classifier, model_all
