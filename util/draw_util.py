@@ -1,13 +1,24 @@
+import random
+
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from config.configs import Config
 
 
-def draw_result(image, results, boxes):
-    # no result
-    if len(boxes) == 0:
-        image.show()
+def random_color():
+    """
+    get random color.
+    :return: str: like "#112233"
+    """
+    colorArr = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F']
+    color = ""
+    for i in range(6):
+        color += colorArr[random.randint(0, 14)]
+    return "#" + color
+
+
+def draw_result(image, results):
     top_label_indices = results[:, 0]
     top_conf = results[:, 1]
     boxes = results[:, 2:]
