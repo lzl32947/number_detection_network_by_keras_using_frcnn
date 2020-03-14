@@ -12,7 +12,7 @@ from util.image_process_util import process_single_input
 
 import numpy as np
 
-from util.image_util import draw_result
+from util.draw_util import draw_result
 
 
 def predict_images(image_list, configs):

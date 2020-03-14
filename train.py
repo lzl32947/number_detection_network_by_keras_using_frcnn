@@ -234,7 +234,7 @@ if __name__ == "__main__":
 
             R = results[0][:, 1:]
 
-            X2, Y1, Y2, IouS = calc_iou(R, config, boxes[0], width, height, NUM_CLASSES)
+            X2, Y1, Y2, IouS = calc_iou(R, boxes[0], width, height, NUM_CLASSES)
 
             if X2 is None:
                 rpn_accuracy_rpn_monitor.append(0)

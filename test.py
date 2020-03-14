@@ -12,7 +12,7 @@ from network.classifier.resnet50_classifier import get_classifier
 from network.rpn.common_rpn import get_rpn
 from util.anchors import get_anchors
 from util.decode_util import nms_for_out, rpn_output
-from util.image_util import draw_result
+from util.draw_util import draw_result
 
 
 def get_img_output_length(width, height):
