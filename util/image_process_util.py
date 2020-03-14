@@ -3,10 +3,12 @@ import random
 from PIL import Image
 import numpy as np
 
+from config.configs import Config
 
-def process_single_input(img, config):
+
+def process_single_input(img):
     # Just resize the image to 600,600
-    img = img.resize((600, 600), Image.ANTIALIAS)
+    img = img.resize((Config.input_dim, Config.input_dim), Image.ANTIALIAS)
     # change the dtype and then for the pixel process
     photo = np.array(img, dtype=np.float32)
     photo = process_pixel(photo)
