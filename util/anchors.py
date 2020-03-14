@@ -4,16 +4,10 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import random
 
-
-def random_color():
-    colorArr = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F']
-    color = ""
-    for i in range(6):
-        color += colorArr[random.randint(0, 14)]
-    return "#" + color
+from config.configs import Config
 
 
-def generate_anchors(sizes=None, ratios=None):
+def generate_anchors():
     """
     This function generate anchors.
     The default anchor size should have size like:
@@ -27,16 +21,13 @@ def generate_anchors(sizes=None, ratios=None):
      [-256. -128.  256.  128.],
      [-512. -256.  512.  256.]]
     """
-    if sizes is None:
-        sizes = [128, 256, 512]
 
-    if ratios is None:
-        ratios = [[1, 1], [1, 2], [2, 1]]
+    # the default anchor box sizes and scales
+    sizes = Config.anchor_box_scales
+    ratios = Config.anchor_box_ratios
 
     num_anchors = len(sizes) * len(ratios)
-
     anchors = np.zeros((num_anchors, 4))
-
     anchors[:, 2:] = np.tile(sizes, (2, len(ratios))).T
 
     for i in range(len(ratios)):
@@ -48,9 +39,10 @@ def generate_anchors(sizes=None, ratios=None):
     return anchors
 
 
-def shift(shape, anchors, stride=16):
-    shift_x = (np.arange(0, shape[0], dtype=keras.backend.floatx()) + 0.5) * stride
-    shift_y = (np.arange(0, shape[1], dtype=keras.backend.floatx()) + 0.5) * stride
+def shift(shape, anchors):
+    # get the range of the center of anchor boxes
+    shift_x = (np.arange(0, shape[0], dtype=keras.backend.floatx()) + 0.5) * Config.rpn_stride
+    shift_y = (np.arange(0, shape[1], dtype=keras.backend.floatx()) + 0.5) * Config.rpn_stride
 
     shift_x, shift_y = np.meshgrid(shift_x, shift_y)
 
@@ -76,8 +68,11 @@ def shift(shape, anchors, stride=16):
 
 
 def get_anchors(shape, width, height):
+    # get the anchor sizes
     anchors = generate_anchors()
+    # get the anchor areas by (xmin, ymin, xmax, ymax)
     network_anchors = shift(shape, anchors)
+    # change the size to decimal numbers between 0 and 1
     network_anchors[:, 0] = network_anchors[:, 0] / width
     network_anchors[:, 1] = network_anchors[:, 1] / height
     network_anchors[:, 2] = network_anchors[:, 2] / width
