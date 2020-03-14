@@ -46,7 +46,7 @@ def nms_for_out(sess, all_labels, all_confs, all_bboxes, num_classes, nms):
     boxes = tf.placeholder(dtype='float32', shape=(None, 4))
     scores = tf.placeholder(dtype='float32', shape=(None,))
     nms_out = tf.image.non_max_suppression(boxes, scores,
-                                           300,
+                                           Config.rpn_result_batch,
                                            iou_threshold=nms)
     # num_classes are the real class (exclude the GT)
     for c in range(num_classes):
@@ -101,8 +101,8 @@ def rpn_output(sess, predictions, anchors, confidence_threshold=0):
             feed_dict = {boxes: boxes_to_process,
                          scores: confs_to_process}
             idx = sess.run(tf.image.non_max_suppression(boxes, scores,
-                                                        300,
-                                                        iou_threshold=0.7), feed_dict=feed_dict)
+                                                        Config.rpn_result_batch,
+                                                        iou_threshold=Config.iou_threshold), feed_dict=feed_dict)
             # get the best result in the result
             good_boxes = boxes_to_process[idx]
             # and the confs
@@ -119,7 +119,7 @@ def rpn_output(sess, predictions, anchors, confidence_threshold=0):
                 argsort = np.argsort(k[:, 1])[::-1]
                 k = k[argsort]
                 # 选出置信度最大的keep_top_k个
-                k = k[:300]
+                k = k[:Config.rpn_result_batch]
         results.append(k)
 
     return results
