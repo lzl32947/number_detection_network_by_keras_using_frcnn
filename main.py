@@ -7,8 +7,10 @@ from predict import predict_images
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--predict", action="store_true", help="Run the program to predict images")
-    parser.add_argument("-i", "--images", help="Predict images in provided path.", default="G:\\data_stored\\test_line")
-    parser.add_argument("-m", "--model", help="The model or the weight path.", default="./weight/number_weight.h5")
+    parser.add_argument("-i", "--images", help="Predict images in provided path.",
+                        default="G:\\data_stored\\generated_train")
+    parser.add_argument("-m", "--model", help="The model or the weight path.",
+                        default="weight/number_weight.h5")
     args = parser.parse_args()
 
     config = Config()

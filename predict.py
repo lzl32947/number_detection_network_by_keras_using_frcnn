@@ -5,8 +5,7 @@ from keras import Model, Input
 
 from config.configs import Config
 from network.backbone.resnet50 import ResNet50
-from network.classifier.resnet50_classifier import get_classifier, get_classifier_model
-from network.rpn.common_rpn import get_rpn, get_rpn_model
+from network.model_combination import get_rpn_model, get_classifier_model
 from util.anchors import get_anchors
 from util.decode_util import rpn_output, nms_for_out
 from util.image_process_util import process_single_input
@@ -22,9 +21,9 @@ def predict_images(image_list, configs):
     sess = tf.Session(config=config)
     K.set_session(sess)
 
-    model_rpn = get_rpn_model()
+    model_rpn = get_rpn_model(None)
     model_rpn.load_weights(configs.model_path, by_name=True)
-    model_classifier = get_classifier_model()
+    model_classifier = get_classifier_model(32, 11, True)
     model_classifier.load_weights(configs.model_path, by_name=True, skip_mismatch=True)
 
     anchors = get_anchors((38, 38), 600, 600)
@@ -123,11 +122,14 @@ def predict_images(image_list, configs):
         probs = np.array(probs)
         boxes = np.array(bboxes, dtype=np.float32)
         # reset to decimal number for running the nms
-        boxes[:, 0] = boxes[:, 0] * 16 / 600
-        boxes[:, 1] = boxes[:, 1] * 16 / 600
-        boxes[:, 2] = boxes[:, 2] * 16 / 600
-        boxes[:, 3] = boxes[:, 3] * 16 / 600
-        results = np.array(
-            nms_for_out(sess, np.array(labels), np.array(probs), np.array(boxes), 11 - 1, 0.4))
-        draw_result(old_image, results, boxes)
+        if len(boxes) != 0:
+            boxes[:, 0] = boxes[:, 0] * 16 / 600
+            boxes[:, 1] = boxes[:, 1] * 16 / 600
+            boxes[:, 2] = boxes[:, 2] * 16 / 600
+            boxes[:, 3] = boxes[:, 3] * 16 / 600
+            results = np.array(
+                nms_for_out(sess, np.array(labels), np.array(probs), np.array(boxes), 11 - 1, 0.4))
+            draw_result(old_image, results, boxes)
+        else:
+            old_image.show()
     sess.close()
