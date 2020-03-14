@@ -8,26 +8,28 @@ from network.classifier.resnet50_classifier import classifier_layers
 from network.rpn.common_rpn import get_rpn
 
 
-def get_rpn_layers(inputs):
-    net, result_layer = ResNet50(inputs)
-    output_name = get_rpn(net, result_layer, 9)
-    output_layer = [net[i] for i in output_name]
-    return net, output_layer
+def get_rpn(base_layers, num_anchors):
+    # 首先进行3x3的卷积
+    x = Conv2D(512, (3, 3), padding='same', activation='relu', kernel_initializer='normal', name='rpn_conv1')(
+        base_layers)
+
+    # 生成9类的分类值
+    x_class = Conv2D(num_anchors, (1, 1), activation='sigmoid', kernel_initializer='uniform', name='rpn_out_class')(x)
+    # 生成4x9的回归值
+    x_regr = Conv2D(num_anchors * 4, (1, 1), activation='linear', kernel_initializer='zero', name='rpn_out_regress')(x)
+
+    x_class = Reshape((-1, 1), name="classification")(x_class)
+    x_regr = Reshape((-1, 4), name="regression")(x_regr)
+
+    # 返回的是分类层、回归层和原始层
+    return [x_class, x_regr, base_layers]
 
 
-def get_rpn_model(inputs):
-    if inputs is None:
-        inputs = Input(shape=(None, None, 3))
-    net, result = get_rpn_layers(inputs)
-    model_rpn = Model(net['inputs'], result)
-    return model_rpn
-
-
-def get_classifier_layers(feature_map_input, roi_input, num_rois, nb_classes, trainable):
+def get_classifier(base_layers, input_rois, num_rois, nb_classes=21, trainable=False):
     pooling_regions = 14
     input_shape = (num_rois, 14, 14, 1024)
     # proposal 层相当于 [base_layers,input_rois]
-    out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([feature_map_input, roi_input])
+    out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([base_layers, input_rois])
     # 以下是对于feature做操作
     out = classifier_layers(out_roi_pool, input_shape=input_shape, trainable=True)
     out = TimeDistributed(Flatten())(out)
@@ -40,26 +42,41 @@ def get_classifier_layers(feature_map_input, roi_input, num_rois, nb_classes, tr
     return [out_class, out_regr]
 
 
-def get_classifier_model(num_rois, nb_classes, trainable=False, feature_map_input=None, roi_input=None):
-    if feature_map_input is None:
-        feature_map_input = Input(shape=(None, None, 1024))
-    if roi_input is None:
-        roi_input = Input(shape=(None, 4))
-    result = get_classifier_layers(feature_map_input, roi_input, num_rois, nb_classes, trainable)
-    model = Model([feature_map_input, roi_input], result)
-    return model
-
-
-def get_all_model():
+def get_model(num_classes):
     inputs = Input(shape=(None, None, 3))
     roi_input = Input(shape=(None, 4))
+    base_layers = ResNet50(inputs)
 
-    net, output_layer = get_rpn_layers(inputs)
-    model_rpn = Model(inputs, output_layer[:2])
+    num_anchors = 9
+    rpn = get_rpn(base_layers, num_anchors)
+    model_rpn = Model(inputs, rpn[:2])
 
-    classifier = get_classifier_layers(output_layer[2], roi_input, 32, nb_classes=11, trainable=True)
+    classifier = get_classifier(base_layers, roi_input, 32, nb_classes=num_classes, trainable=True)
     model_classifier = Model([inputs, roi_input], classifier)
 
-    model_all = Model([inputs, roi_input], output_layer[:2] + classifier)
-    plot_model(model_all, show_shapes=True, show_layer_names=True)
+    model_all = Model([inputs, roi_input], rpn[:2] + classifier)
     return model_rpn, model_classifier, model_all
+
+
+def get_predict_model(num_classes):
+    # inputs 是 输入的图像
+    inputs = Input(shape=(None, None, 3))
+    # roi_input 应该是输入的ROI
+    roi_input = Input(shape=(None, 4))
+    # feature map input 应该是经过resnet后输出的图像
+    feature_map_input = Input(shape=(None, None, 1024))
+
+    # base_layers 是输出的feature_map的层
+    base_layers = ResNet50(inputs)
+    # num_anchors 是 9
+    num_anchors = 9
+    # rpn 是 [分类层、回归层、原始的feature map层]
+    rpn = get_rpn(base_layers, num_anchors)
+    # rpn 模型以图像层作输入、rpn层作输出
+    model_rpn = Model(inputs, rpn)
+
+    # 分类层
+    classifier = get_classifier(feature_map_input, roi_input, 32, nb_classes=num_classes, trainable=True)
+    model_classifier_only = Model([feature_map_input, roi_input], classifier)
+
+    return model_rpn, model_classifier_only

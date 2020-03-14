@@ -5,7 +5,7 @@ from keras import Model, Input
 
 from config.configs import Config
 from network.backbone.resnet50 import ResNet50
-from network.model_combination import get_rpn_model, get_classifier_model
+from network.model_combination import get_predict_model
 from util.anchors import get_anchors
 from util.decode_util import rpn_output, nms_for_out
 from util.image_process_util import process_single_input
@@ -21,9 +21,8 @@ def predict_images(image_list, configs):
     sess = tf.Session(config=config)
     K.set_session(sess)
 
-    model_rpn = get_rpn_model(None)
+    model_rpn, model_classifier = get_predict_model(11)
     model_rpn.load_weights(configs.model_path, by_name=True)
-    model_classifier = get_classifier_model(32, 11, True)
     model_classifier.load_weights(configs.model_path, by_name=True, skip_mismatch=True)
 
     anchors = get_anchors((38, 38), 600, 600)

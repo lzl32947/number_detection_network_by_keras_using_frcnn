@@ -9,9 +9,9 @@ import time
 import tensorflow as tf
 import keras.backend as K
 
-from network.model_combination import get_all_model
+from network.model_combination import get_model
 from util.anchors import get_anchors
-from util.data_util import calc_iou,  generate
+from util.data_util import calc_iou, generate
 from util.decode_util import rpn_output
 
 
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     EPOCH_LENGTH = 2000
     annotation_path = '2007_train.txt'
 
-    model_rpn, model_classifier, model_all = get_all_model()
+    model_rpn, model_classifier, model_all = get_model(11)
     base_net_weights = "weight/voc_weights.h5"
 
     model_all.summary()
@@ -259,7 +259,7 @@ if __name__ == "__main__":
 
             if len(neg_samples) == 0:
                 continue
-            num_rois =32
+            num_rois = 32
             if len(pos_samples) < num_rois // 2:
                 selected_pos_samples = pos_samples.tolist()
             else:
