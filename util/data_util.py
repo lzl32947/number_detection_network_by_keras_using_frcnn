@@ -14,17 +14,23 @@ from keras.objectives import categorical_crossentropy
 from keras.utils.data_utils import get_file
 from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
 
+from config.configs import Config
 from util.anchors import get_anchors
 from util.encode_util import assign_boxes
 
 
 def rand(a=0, b=1):
+    """
+    :param a:lower number
+    :param b:upper number
+    :return: random number between a and b
+    """
     return np.random.rand() * (b - a) + a
 
 
 def union(au, bu, area_intersection):
     """
-    This function return the union area of the two rectangle
+    This function return the total area of the two rectangle
     """
     area_a = (au[2] - au[0]) * (au[3] - au[1])
     area_b = (bu[2] - bu[0]) * (bu[3] - bu[1])
@@ -34,7 +40,7 @@ def union(au, bu, area_intersection):
 
 def intersection(ai, bi):
     """
-    This function return the inter section of two rectangle
+    This function return the area of inter section of two rectangle
     """
     x = max(ai[0], bi[0])
     y = max(ai[1], bi[1])
@@ -59,22 +65,33 @@ def iou(a, b):
     return float(area_i) / float(area_u + 1e-6)
 
 
-def calc_iou(R, config, all_boxes, width, height, num_classes):
-    rpn_stride = 16
-    # print(all_boxes)
+def calc_iou(R, all_boxes, width, height, num_classes):
+    """
+    :param R: the output of the RPN network[:,1:], with array of (rpn_result_batch,4)
+    :param all_boxes: the boxes from the input, with shape (targets_number, 5), and in the last dimension the 5
+                        stands for the (xmin, ymin, xmax, ymax, classification result)
+    :param width: the width of input
+    :param height: the height of input
+    :param num_classes: the count of classes
+    :return:
+    """
+    rpn_stride = Config.rpn_stride
     bboxes = all_boxes[:, :4]
     gta = np.zeros((len(bboxes), 4))
+    # get the result of the box in feature map
     for bbox_num, bbox in enumerate(bboxes):
         gta[bbox_num, 0] = int(round(bbox[0] * width / rpn_stride))
         gta[bbox_num, 1] = int(round(bbox[1] * height / rpn_stride))
         gta[bbox_num, 2] = int(round(bbox[2] * width / rpn_stride))
         gta[bbox_num, 3] = int(round(bbox[3] * height / rpn_stride))
+
     x_roi = []
     y_class_num = []
     y_class_regr_coords = []
     y_class_regr_label = []
     IoUs = []
-    # print(gta)
+    # go through the boxes from the RPN result and find the most match one with the given target area.
+    # 遍历每一个由RPN网络产生的候选框并且找到与输入图像IOU最大的输入框
     for ix in range(R.shape[0]):
         x1 = R[ix, 0] * width / rpn_stride
         y1 = R[ix, 1] * height / rpn_stride
@@ -85,7 +102,7 @@ def calc_iou(R, config, all_boxes, width, height, num_classes):
         y1 = int(round(y1))
         x2 = int(round(x2))
         y2 = int(round(y2))
-        # print([x1, y1, x2, y2])
+        # find the best place that have the max iou from the results of RPN network(rpn_result_batch,4)
         best_iou = 0.0
         best_bbox = -1
         for bbox_num in range(len(bboxes)):
@@ -93,23 +110,25 @@ def calc_iou(R, config, all_boxes, width, height, num_classes):
             if curr_iou > best_iou:
                 best_iou = curr_iou
                 best_bbox = bbox_num
-        # print(best_iou)
+        # not suitable
         if best_iou < 0.1:
             continue
         else:
+            # find one
             w = x2 - x1
             h = y2 - y1
             x_roi.append([x1, y1, w, h])
             IoUs.append(best_iou)
-
+            # iou between 0.1 and 0.5
             if 0.1 <= best_iou < 0.5:
+                # the negative samples
                 label = -1
             elif 0.5 <= best_iou:
-
+                # the positive samples
                 label = int(all_boxes[best_bbox, -1])
                 cxg = (gta[best_bbox, 0] + gta[best_bbox, 2]) / 2.0
                 cyg = (gta[best_bbox, 1] + gta[best_bbox, 3]) / 2.0
-
+                # standardize the input result
                 cx = x1 + w / 2.0
                 cy = y1 + h / 2.0
 
@@ -120,35 +139,39 @@ def calc_iou(R, config, all_boxes, width, height, num_classes):
             else:
                 print('roi = {}'.format(best_iou))
                 raise RuntimeError
-        # print(label)
+        # generate label
         class_label = num_classes * [0]
         class_label[label] = 1
         y_class_num.append(copy.deepcopy(class_label))
         coords = [0] * 4 * (num_classes - 1)
         labels = [0] * 4 * (num_classes - 1)
         if label != -1:
+            # the positive samples
             label_pos = 4 * label
-            sx, sy, sw, sh = [8.0, 8.0, 4.0, 4.0]
+            sx, sy, sw, sh = Config.classifier_regr_std
             coords[label_pos:4 + label_pos] = [sx * tx, sy * ty, sw * tw, sh * th]
             labels[label_pos:4 + label_pos] = [1, 1, 1, 1]
             y_class_regr_coords.append(copy.deepcopy(coords))
             y_class_regr_label.append(copy.deepcopy(labels))
         else:
+            # the negative samples
             y_class_regr_coords.append(copy.deepcopy(coords))
             y_class_regr_label.append(copy.deepcopy(labels))
 
     if len(x_roi) == 0:
+        # No result
         return None, None, None, None
-
+    # X with shape (?, 4)
     X = np.array(x_roi)
-    # print(X)
+    # Y1 with shape (?,num_class)
     Y1 = np.array(y_class_num)
+    # TODO: The meaning of Y2
     Y2 = np.concatenate([np.array(y_class_regr_label), np.array(y_class_regr_coords)], axis=1)
 
     return np.expand_dims(X, axis=0), np.expand_dims(Y1, axis=0), np.expand_dims(Y2, axis=0), IoUs
 
 
-def get_new_img_size(width, height, img_min_side=600):
+def get_new_img_size(width, height, img_min_side=Config.input_dim):
     if width <= height:
         f = float(img_min_side) / width
         resized_height = int(f * height)
