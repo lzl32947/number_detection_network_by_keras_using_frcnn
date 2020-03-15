@@ -80,3 +80,8 @@ def get_predict_model(num_classes):
     model_classifier_only = Model([feature_map_input, roi_input], classifier)
 
     return model_rpn, model_classifier_only
+
+
+if __name__ == '__main__':
+    m_r, m_c = get_predict_model(11)
+    plot_model(m_c, to_file="classifier/classifier_model.png", show_layer_names=True, show_shapes=True)
