@@ -9,8 +9,9 @@ import time
 import tensorflow as tf
 import keras.backend as K
 
+from config.configs import Config
 from network.model_combination import get_model
-from util.anchors import get_anchors
+from util.data_util import get_anchors, get_random_data, get_data
 from util.data_util import calc_iou, generate
 from util.decode_util import rpn_output
 
@@ -143,12 +144,11 @@ if __name__ == "__main__":
     sess.run(tf.initialize_all_variables())
     K.set_session(sess)
 
-    NUM_CLASSES = 11
     EPOCH = 100
     EPOCH_LENGTH = 2000
     annotation_path = '2007_train.txt'
-
-    model_rpn, model_classifier, model_all = get_model(11)
+    NUM_CLASSES = len(Config.class_names) + 1
+    model_rpn, model_classifier, model_all = get_model(len(Config.class_names) + 1)
     base_net_weights = "weight/voc_weights.h5"
 
     model_all.summary()
@@ -161,7 +161,7 @@ if __name__ == "__main__":
     np.random.shuffle(lines)
     np.random.seed(None)
 
-    rpn_train = generate(lines, NUM_CLASSES, solid=True)
+    rpn_train = generate(lines, NUM_CLASSES, data_function=get_data)
     log_dir = "logs"
     # 训练参数设置
     logging = TensorBoard(log_dir=log_dir)
@@ -259,7 +259,7 @@ if __name__ == "__main__":
 
             if len(neg_samples) == 0:
                 continue
-            num_rois = 32
+            num_rois = Config.num_rois
             if len(pos_samples) < num_rois // 2:
                 selected_pos_samples = pos_samples.tolist()
             else:
