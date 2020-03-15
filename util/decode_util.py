@@ -5,38 +5,38 @@ from config.configs import Config
 
 
 def decode_boxes(mbox_loc, mbox_priorbox):
-    # 获得先验框的宽与高
+    # get the width and height of prior box
     prior_width = mbox_priorbox[:, 2] - mbox_priorbox[:, 0]
     prior_height = mbox_priorbox[:, 3] - mbox_priorbox[:, 1]
 
-    # 获得先验框的中心点
+    # get the center point of prior box
     prior_center_x = 0.5 * (mbox_priorbox[:, 2] + mbox_priorbox[:, 0])
     prior_center_y = 0.5 * (mbox_priorbox[:, 3] + mbox_priorbox[:, 1])
 
-    # 真实框距离先验框中心的xy轴偏移情况
+    # get the offset of the prior box and the real box
     decode_bbox_center_x = mbox_loc[:, 0] * prior_width / 4
     decode_bbox_center_x += prior_center_x
     decode_bbox_center_y = mbox_loc[:, 1] * prior_height / 4
     decode_bbox_center_y += prior_center_y
 
-    # 真实框的宽与高的求取
+    # get the width and height of the real box
     decode_bbox_width = np.exp(mbox_loc[:, 2] / 4)
     decode_bbox_width *= prior_width
     decode_bbox_height = np.exp(mbox_loc[:, 3] / 4)
     decode_bbox_height *= prior_height
 
-    # 获取真实框的左上角与右下角
+    # get the top-left and bottom-right of the real box
     decode_bbox_xmin = decode_bbox_center_x - 0.5 * decode_bbox_width
     decode_bbox_ymin = decode_bbox_center_y - 0.5 * decode_bbox_height
     decode_bbox_xmax = decode_bbox_center_x + 0.5 * decode_bbox_width
     decode_bbox_ymax = decode_bbox_center_y + 0.5 * decode_bbox_height
 
-    # 真实框的左上角与右下角进行堆叠
+    # concatenate the result
     decode_bbox = np.concatenate((decode_bbox_xmin[:, None],
                                   decode_bbox_ymin[:, None],
                                   decode_bbox_xmax[:, None],
                                   decode_bbox_ymax[:, None]), axis=-1)
-    # 防止超出0与1
+    # clip the result by 0 and 1
     decode_bbox = np.minimum(np.maximum(decode_bbox, 0.0), 1.0)
     return decode_bbox
 
@@ -55,17 +55,16 @@ def nms_for_out(sess, all_labels, all_confs, all_bboxes, num_classes, nms):
         mask = all_labels == c
         # the result does have the label c
         if len(all_confs[mask]) > 0:
-            # 取出得分高于confidence_threshold的框
+            # get the box that are higher than identifier_threshold_nms
             boxes_to_process = all_bboxes[mask]
             confs_to_process = all_confs[mask]
-            # 进行iou的非极大抑制
             feed_dict = {boxes: boxes_to_process,
                          scores: confs_to_process}
             idx = sess.run(nms_out, feed_dict=feed_dict)
-            # 取出在非极大抑制中效果较好的内容
+            # get the better result in nms result
             good_boxes = boxes_to_process[idx]
             confs = confs_to_process[idx][:, None]
-            # 将label、置信度、框的位置进行堆叠。
+            # concatenate the label, confidence and location of the boxes
             labels = c * np.ones((len(idx), 1))
             c_pred = np.concatenate((labels, confs, good_boxes), axis=1)
         results.extend(c_pred)

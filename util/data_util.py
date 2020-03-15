@@ -17,9 +17,7 @@ from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
 from config.configs import Config
 from util.encode_util import assign_boxes
 
-import numpy as np
 import keras
-import tensorflow as tf
 import matplotlib.pyplot as plt
 import random
 
@@ -100,7 +98,6 @@ def get_anchors(shape, width, height):
     return network_anchors
 
 
-
 def rand(a=0, b=1):
     """
     :param a:lower number
@@ -168,7 +165,7 @@ def calc_iou(R, all_boxes, width, height, num_classes):
         gta[bbox_num, 3] = int(round(bbox[3] * height / rpn_stride))
 
     x_roi = []
-    y_class_num = []
+    y_class_num = []  # y_class_num stands for the label of samples (positive and negative ones)
     y_class_regr_coords = []
     y_class_regr_label = []
     IoUs = []
@@ -280,70 +277,50 @@ def get_img_output_length(width, height):
     return get_output_length(width), get_output_length(height)
 
 
-def generate(line, n_classes, solid=True, solid_shape=[600, 600]):
-    train_lines = line
-    train_batches = len(line)
-    num_classes = n_classes
-    solid = solid
-    solid_shape = solid_shape
-    while True:
-        shuffle(train_lines)
-        lines = train_lines
-        for annotation_line in lines:
-            img, y = get_random_data(annotation_line)
-            height, width, _ = np.shape(img)
+def get_data(annotation_line, resize=True):
+    line = annotation_line.split()
+    image = Image.open(line[0])
+    iw, ih = image.size
+    w, h = (Config.input_dim, Config.input_dim)
+    box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]],dtype=np.float)
 
-            if len(y) == 0:
-                continue
-            boxes = np.array(y[:, :4], dtype=np.float32)
-            boxes[:, 0] = boxes[:, 0] / width
-            boxes[:, 1] = boxes[:, 1] / height
-            boxes[:, 2] = boxes[:, 2] / width
-            boxes[:, 3] = boxes[:, 3] / height
+    if resize:
+        image = image.resize((w, h), Image.ANTIALIAS)
+        x_r = w / iw
+        y_r = h / ih
+        box[:, [0, 2]] = box[:, [0, 2]] * x_r
+        box[:, [1, 3]] = box[:, [1, 3]] * y_r
+    else:
+        new_image = Image.new('RGB', (w, h), (128, 128, 128))
+        w_r = w / iw
+        h_r = h / ih
+        if h_r > w_r:
+            r = w_r
+            n_w = w_r * w
+            n_h = w_r * h
+            dx = 0
+            dy = (h - n_h) / 2
+        else:
+            r = h_r
+            n_w = h_r * w
+            n_h = h_r * h
+            dx = (w - n_w) / 2
+            dy = 0
+        r_image = image.resize((n_w, n_h))
+        new_image.paste(r_image, (dx, dy))
+        box[:, [0, 2]] = box[:, [0, 2]] * r + dx
+        box[:, [1, 3]] = box[:, [1, 3]] * r + dy
 
-            box_heights = boxes[:, 3] - boxes[:, 1]
-            box_widths = boxes[:, 2] - boxes[:, 0]
-            if (box_heights <= 0).any() or (box_widths <= 0).any():
-                continue
+    image_data = np.array(image, dtype=np.float64)
 
-            y[:, :4] = boxes[:, :4]
-
-            anchors = get_anchors(get_img_output_length(width, height), width, height)
-
-            # 计算真实框对应的先验框，与这个先验框应当有的预测结果
-            assignment = assign_boxes(y, anchors)
-
-            num_regions = 256
-
-            classification = assignment[:, 4]
-            regression = assignment[:, :]
-
-            mask_pos = classification[:] > 0
-            num_pos = len(classification[mask_pos])
-            if num_pos > num_regions / 2:
-                val_locs = random.sample(range(num_pos), int(num_pos - num_regions / 2))
-                classification[mask_pos][val_locs] = -1
-                regression[mask_pos][val_locs, -1] = -1
-
-            mask_neg = classification[:] == 0
-            num_neg = len(classification[mask_neg])
-            if len(classification[mask_neg]) + num_pos > num_regions:
-                val_locs = random.sample(range(num_neg), int(num_neg - num_pos))
-                classification[mask_neg][val_locs] = -1
-
-            classification = np.reshape(classification, [-1, 1])
-            regression = np.reshape(regression, [-1, 5])
-
-            tmp_inp = np.array(img)
-            tmp_targets = [np.expand_dims(np.array(classification, dtype=np.float32), 0),
-                           np.expand_dims(np.array(regression, dtype=np.float32), 0)]
-
-            yield preprocess_input(np.expand_dims(tmp_inp, 0)), tmp_targets, np.expand_dims(y, 0)
+    if len(box) > 0:
+        return image_data, box
+    else:
+        return image_data, []
 
 
 def get_random_data(annotation_line, solid=True, solid_shape=[600, 600], random=True, jitter=.1, hue=.1, sat=1.1,
                     val=1.1, proc_img=True):
-    '''r实时数据增强的随机预处理'''
     line = annotation_line.split()
     image = Image.open(line[0])
     iw, ih = image.size
@@ -400,3 +377,60 @@ def get_random_data(annotation_line, solid=True, solid_shape=[600, 600], random=
         return image_data, box_data
     else:
         return image_data, []
+
+
+def generate(line, n_classes, data_function=get_data):
+    train_lines = line
+    while True:
+        shuffle(train_lines)
+        lines = train_lines
+        for annotation_line in lines:
+            img, y = data_function(annotation_line)
+            height, width, _ = np.shape(img)
+
+            if len(y) == 0:
+                continue
+            boxes = np.array(y[:, :4], dtype=np.float32)
+            boxes[:, 0] = boxes[:, 0] / width
+            boxes[:, 1] = boxes[:, 1] / height
+            boxes[:, 2] = boxes[:, 2] / width
+            boxes[:, 3] = boxes[:, 3] / height
+
+            box_heights = boxes[:, 3] - boxes[:, 1]
+            box_widths = boxes[:, 2] - boxes[:, 0]
+            if (box_heights <= 0).any() or (box_widths <= 0).any():
+                continue
+
+            y[:, :4] = boxes[:, :4]
+
+            anchors = get_anchors(get_img_output_length(width, height), width, height)
+
+            # 计算真实框对应的先验框，与这个先验框应当有的预测结果
+            assignment = assign_boxes(y, anchors)
+            # assign boxes have shape (12996,5), the assignment[:,4] stands for whether this sample is for negative(-1) or positive (1) or not use(0), and if poistive, the [:,0:3] will be the place of the box
+            num_regions = 256
+
+            classification = assignment[:, 4]
+            regression = assignment[:, :]
+
+            mask_pos = classification[:] > 0
+            num_pos = len(classification[mask_pos])
+            if num_pos > num_regions / 2:
+                val_locs = random.sample(range(num_pos), int(num_pos - num_regions / 2))
+                classification[mask_pos][val_locs] = -1
+                regression[mask_pos][val_locs, -1] = -1
+
+            mask_neg = classification[:] == 0
+            num_neg = len(classification[mask_neg])
+            if len(classification[mask_neg]) + num_pos > num_regions:
+                val_locs = random.sample(range(num_neg), int(num_neg - num_pos))
+                classification[mask_neg][val_locs] = -1
+
+            classification = np.reshape(classification, [-1, 1])
+            regression = np.reshape(regression, [-1, 5])
+
+            tmp_inp = np.array(img)
+            tmp_targets = [np.expand_dims(np.array(classification, dtype=np.float32), 0),
+                           np.expand_dims(np.array(regression, dtype=np.float32), 0)]
+
+            yield preprocess_input(np.expand_dims(tmp_inp, 0)), tmp_targets, np.expand_dims(y, 0)

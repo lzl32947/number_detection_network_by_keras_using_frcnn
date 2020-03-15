@@ -1,10 +1,8 @@
 import tensorflow as tf
 import numpy as np
 
-priors = None
 
-def ciou(box):
-    global priors
+def ciou(box, priors):
     # 计算出每个真实框与所有的先验框的iou
     # 判断真实框与先验框的重合情况
     inter_upleft = np.maximum(priors[:, :2], box[:2])
@@ -24,8 +22,8 @@ def ciou(box):
     return iou
 
 
-def encode_box(box, return_iou=True):
-    iou = ciou(box)
+def encode_box(box, priors, return_iou=True):
+    iou = ciou(box, priors)
     num_priors = 12996
     overlap_threshold = 0.7
     encoded_box = np.zeros((num_priors, 4 + return_iou))
@@ -53,19 +51,17 @@ def encode_box(box, return_iou=True):
     encoded_box[:, :2][assign_mask] = box_center - assigned_priors_center
     encoded_box[:, :2][assign_mask] /= assigned_priors_wh
     encoded_box[:, :2][assign_mask] *= 4
-
     encoded_box[:, 2:4][assign_mask] = np.log(box_wh / assigned_priors_wh)
     encoded_box[:, 2:4][assign_mask] *= 4
     return encoded_box.ravel()
 
 
-def ignore_box(box):
-    iou = ciou(box)
+def ignore_box(box, priors):
+    iou = ciou(box, priors)
 
     num_priors = 12996
-    ignore_threshold =0.3
-    overlap_threshold =0.7
-
+    ignore_threshold = 0.3
+    overlap_threshold = 0.7
 
     ignored_box = np.zeros((num_priors, 1))
 
@@ -80,9 +76,7 @@ def ignore_box(box):
 
 
 def assign_boxes(boxes, anchors):
-    global priors
     num_priors = len(anchors)
-    priors = anchors
     assignment = np.zeros((num_priors, 4 + 1))
 
     assignment[:, 4] = 0.0
@@ -90,7 +84,7 @@ def assign_boxes(boxes, anchors):
         return assignment
 
     # 对每一个真实框都进行iou计算
-    ingored_boxes = np.apply_along_axis(ignore_box, 1, boxes[:, :4])
+    ingored_boxes = np.apply_along_axis(ignore_box, 1, boxes[:, :4], anchors)
     # 取重合程度最大的先验框，并且获取这个先验框的index
     ingored_boxes = ingored_boxes.reshape(-1, num_priors, 1)
     # (num_priors)
@@ -101,7 +95,7 @@ def assign_boxes(boxes, anchors):
     assignment[:, 4][ignore_iou_mask] = -1
 
     # (n, num_priors, 5)
-    encoded_boxes = np.apply_along_axis(encode_box, 1, boxes[:, :4])
+    encoded_boxes = np.apply_along_axis(encode_box, 1, boxes[:, :4], anchors)
     # 每一个真实框的编码后的值，和iou
     # (n, num_priors)
     encoded_boxes = encoded_boxes.reshape(-1, num_priors, 5)

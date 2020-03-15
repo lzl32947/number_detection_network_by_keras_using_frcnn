@@ -14,7 +14,6 @@ def process_single_input(img):
     photo = process_pixel(photo)
     # expand the dim to make it has four dimensions
     photo = np.expand_dims(photo, axis=0)
-
     return photo, img
 
 
