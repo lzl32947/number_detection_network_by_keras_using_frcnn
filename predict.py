@@ -6,7 +6,7 @@ from keras import Model, Input
 from config.configs import Config
 from network.backbone.resnet50 import ResNet50
 from network.model_combination import get_predict_model
-from util.anchors import get_anchors
+from util.data_util import get_anchors
 from util.decode_util import rpn_output, nms_for_out
 from util.image_process_util import process_single_input
 
@@ -21,7 +21,7 @@ def predict_images(image_list, configs):
     sess = tf.Session(config=config)
     K.set_session(sess)
 
-    model_rpn, model_classifier = get_predict_model(11)
+    model_rpn, model_classifier = get_predict_model(len(Config.class_names) + 1)
     model_rpn.load_weights(configs.model_path, by_name=True)
     model_classifier.load_weights(configs.model_path, by_name=True, skip_mismatch=True)
 
@@ -29,7 +29,7 @@ def predict_images(image_list, configs):
 
     for file in image_list:
         image = Image.open(file)
-        new_image, old_image = process_single_input(image, config=configs)
+        new_image, old_image = process_single_input(image)
         # preds is the list of[classification, rpn_out_regress, feature_map]
         # the classification is weather the target is for GT, with shape(12996,1)
         # the rpn_out_regress is the target area, with shape(12996,4)
@@ -79,10 +79,11 @@ def predict_images(image_list, configs):
 
             for ii in range(P_cls.shape[1]):
                 # if the area is the GT or has the greater chance to be the background then pass
-                if np.max(P_cls[0, ii, :]) < 0.3 or np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
+                if np.max(P_cls[0, ii, :]) < Config.identifier_threshold or np.argmax(P_cls[0, ii, :]) == (
+                        P_cls.shape[2] - 1):
                     continue
 
-                # find one
+                # find one and decode the result to boxes
                 label = np.argmax(P_cls[0, ii, :])
                 (x, y, w, h) = ROIs[0, ii, :]
                 cls_num = np.argmax(P_cls[0, ii, :])
@@ -116,19 +117,20 @@ def predict_images(image_list, configs):
                 probs.append(np.max(P_cls[0, ii, :]))
                 labels.append(label)
 
-        # 筛选出其中得分高于confidence的框
+        # get the boxes that have higher confidence than identifier_threshold_nms
         labels = np.array(labels)
         probs = np.array(probs)
         boxes = np.array(bboxes, dtype=np.float32)
         # reset to decimal number for running the nms
         if len(boxes) != 0:
-            boxes[:, 0] = boxes[:, 0] * 16 / 600
-            boxes[:, 1] = boxes[:, 1] * 16 / 600
-            boxes[:, 2] = boxes[:, 2] * 16 / 600
-            boxes[:, 3] = boxes[:, 3] * 16 / 600
+            boxes[:, 0] = boxes[:, 0] * Config.rpn_stride / Config.input_dim
+            boxes[:, 1] = boxes[:, 1] * Config.rpn_stride / Config.input_dim
+            boxes[:, 2] = boxes[:, 2] * Config.rpn_stride / Config.input_dim
+            boxes[:, 3] = boxes[:, 3] * Config.rpn_stride / Config.input_dim
             results = np.array(
-                nms_for_out(sess, np.array(labels), np.array(probs), np.array(boxes), 11 - 1, 0.4))
-            draw_result(old_image, results, boxes)
+                nms_for_out(sess, np.array(labels), np.array(probs), np.array(boxes), len(Config.class_names),
+                            Config.identifier_threshold_nms))
+            draw_result(old_image, results)
         else:
             old_image.show()
     sess.close()
