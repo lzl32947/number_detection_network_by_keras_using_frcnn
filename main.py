@@ -10,7 +10,7 @@ if __name__ == '__main__':
     parser.add_argument("-i", "--images", help="Predict images in provided path.",
                         default="G:\\data_stored\\generated_train")
     parser.add_argument("-m", "--model", help="The model or the weight path.",
-                        default="weight/number_weight.h5")
+                        default="logs/epoch000-loss2.717-rpn0.715-roi2.002.h5")
     args = parser.parse_args()
 
     config = Config()
