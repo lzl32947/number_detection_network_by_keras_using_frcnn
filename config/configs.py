@@ -32,3 +32,7 @@ class Config(object):
     rpn_result_batch = 300
     # the threshold of IOU in RPN result when running NMS
     iou_threshold = 0.7
+    # identifier threshold
+    identifier_threshold = 0.3
+    # identifier threshold for NMS
+    identifier_threshold_nms = 0.4
