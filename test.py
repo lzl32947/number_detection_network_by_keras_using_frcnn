@@ -1,3 +1,5 @@
+import os
+
 from keras_applications import imagenet_utils
 
 from config.configs import Config
@@ -41,7 +43,19 @@ if __name__ == '__main__':
     #         ax.add_patch(rect)
     #     plt.show()
     #     plt.close()
-    rpn_train = generate(lines, 11, data_function=get_data)
-    rpn_train_2 = generate(lines, 11, data_function=get_random_data)
-    for i, j in zip(rpn_train, rpn_train_2):
-        print(i[2][0][:, 4])
+
+    # rpn_train = generate(lines, 11, data_function=get_data)
+    # rpn_train_2 = generate(lines, 11, data_function=get_random_data)
+    # for i, j in zip(rpn_train, rpn_train_2):
+    #     print(i[2][0][:, 4])
+
+    for i in os.walk(r'G:\data_stored\generated_train'):
+        for k in i[2]:
+            p = os.path.join(i[0], k)
+            im = Image.open(p)
+            arr = np.array(im)
+            w, h, c = arr.shape
+
+            plt.figure()
+            figure, ax = plt.subplots()
+

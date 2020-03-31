@@ -407,7 +407,9 @@ def generate(line, n_classes, data_function=get_data):
 
             # 计算真实框对应的先验框，与这个先验框应当有的预测结果
             assignment = assign_boxes(y, anchors)
-            # assign boxes have shape (12996,5), the assignment[:,4] stands for whether this sample is for negative(-1) or positive (1) or not use(0), and if poistive, the [:,0:3] will be the place of the box
+            # assign boxes have shape (12996,5)
+            # the assignment[:,4] stands for whether this sample is for negative(-1) or positive (1) or not use(0)
+            # and if positive, the [:,0:3] will be the place of the box, with(x_min, y_min, width, height)
             num_regions = 256
 
             classification = assignment[:, 4]
