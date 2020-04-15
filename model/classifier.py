@@ -2,7 +2,7 @@ from keras.layers import *
 from keras.models import Model
 from keras.utils import plot_model
 
-from layers.ROIPoolingConv import RoiPoolingConv
+from model.layers.ROIPoolingConv import RoiPoolingConv
 
 
 def identity_block_td(input_tensor, kernel_size, filters, stage, block, trainable=True):
@@ -67,7 +67,29 @@ def classifier_layers(x, input_shape, trainable=False):
     x = identity_block_td(x, 3, [512, 512, 2048], stage=5, block='b', trainable=trainable)
     x = identity_block_td(x, 3, [512, 512, 2048], stage=5, block='c', trainable=trainable)
     x = TimeDistributed(AveragePooling2D((7, 7)), name='avg_pool')(x)
-
     return x
 
 
+def classifier_net(feature_map, roi_region, num_rois, nb_classes=11):
+    pooling_regions = 14
+    input_shape = (num_rois, 14, 14, 1024)
+    # proposal 层相当于 [base_layers,input_rois]
+    out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([feature_map, roi_region])
+    # 以下是对于feature做操作
+    out = classifier_layers(out_roi_pool, input_shape=input_shape, trainable=True)
+    out = TimeDistributed(Flatten())(out)
+    # 输出bbox_pred
+    out_class = TimeDistributed(Dense(nb_classes, activation='softmax', kernel_initializer='zero'),
+                                name='dense_class_{}'.format(nb_classes))(out)
+    # 输出class_prob
+    out_regr = TimeDistributed(Dense(4 * (nb_classes - 1), activation='linear', kernel_initializer='zero'),
+                               name='dense_regress_{}'.format(nb_classes))(out)
+    return [out_class, out_regr]
+
+
+def classifier_model():
+    feature_map = Input(shape=(None, None, 1024))
+    roi_region = Input(shape=(None, 4))
+    out = classifier_net(feature_map, roi_region, 32)
+    model_classifier = Model(inputs=[feature_map, roi_region], outputs=out)
+    return model_classifier

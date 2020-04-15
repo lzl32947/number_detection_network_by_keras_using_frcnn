@@ -1,7 +1,4 @@
-from keras import Model
 from keras.layers import *
-from keras.utils import plot_model
-from config.configs import Config
 
 
 def identity_block(input_tensor, kernel_size, filters, stage, block):
@@ -55,9 +52,7 @@ def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2))
 
 
 def ResNet50(inputs):
-    img_input = inputs
-
-    x = ZeroPadding2D((3, 3))(img_input)
+    x = ZeroPadding2D((3, 3))(inputs)
     x = Conv2D(64, (7, 7), strides=(2, 2), name='conv1')(x)
     x = BatchNormalization(name='bn_conv1')(x)
     x = Activation('relu')(x)
