@@ -45,87 +45,10 @@ def pos2label(loc, cls, anc):
     return encoded_box
 
 
-# def encode_label(box, anchors):
-#     loc = box[:, :4]
-#     loc = loc.astype(np.float)
-#     loc /= Config.input_dim
-#
-#     assignment = np.zeros((len(anchors), 5))
-#     ignore_boxes = []
-#
-#     for i in range(0, len(box)):
-#         iou = calculate_iou(loc[i], anchors)
-#         ignore_box = np.zeros((len(anchors), 1))
-#         ignore_index = (iou > Config.rpn_min_overlap) & (iou < Config.rpn_max_overlap)
-#         ignore_box[:, 0][ignore_index] = iou[ignore_index]
-#         ignore_boxes.append(ignore_box)
-#
-#     ignore_boxes = np.array(ignore_boxes)
-#     ignore_iou = ignore_boxes[:, :, 0].max(axis=0)
-#     ignore_iou_mask = ignore_iou > 0
-#     assignment[:, 4][ignore_iou_mask] = -1
-#
-#     encoded_boxes = []
-#     for i in range(0, len(box)):
-#         iou = calculate_iou(loc[i], anchors)
-#         encoded_box = np.zeros((len(anchors), 5))
-#         encode_index = iou > Config.rpn_max_overlap
-#         if not encode_index.any():
-#             encode_index[iou.argmax()] = True
-#         encoded_box[:, -1][encode_index] = iou[encode_index]
-#         assigned_priors = anchors[encode_index]
-#         box_center = 0.5 * (loc[i, :2] + loc[i, 2:])
-#         box_wh = loc[i, 2:] - loc[i, :2]
-#         assigned_priors_center = 0.5 * (assigned_priors[:, :2] +
-#                                         assigned_priors[:, 2:4])
-#         assigned_priors_wh = (assigned_priors[:, 2:4] -
-#                               assigned_priors[:, :2])
-#         encoded_box[:, :2][encode_index] = box_center - assigned_priors_center
-#         encoded_box[:, :2][encode_index] /= assigned_priors_wh
-#         encoded_box[:, :2][encode_index] *= 4
-#         encoded_box[:, 2:4][encode_index] = np.log(box_wh / assigned_priors_wh)
-#         encoded_box[:, 2:4][encode_index] *= 4
-#         encoded_boxes.append(encoded_box)
-#     encoded_boxes = np.array(encoded_boxes)
-#
-#     best_iou = encoded_boxes[:, :, -1].max(axis=0)
-#     best_iou_idx = encoded_boxes[:, :, -1].argmax(axis=0)
-#     best_iou_mask = best_iou > 0
-#     best_iou_idx = best_iou_idx[best_iou_mask]
-#     assign_num = len(best_iou_idx)
-#     encoded_boxes = encoded_boxes[:, best_iou_mask, :]
-#     assignment[:, :4][best_iou_mask] = encoded_boxes[best_iou_idx, np.arange(assign_num), :4]
-#     assignment[:, 4][best_iou_mask] = 1
-#
-#     num_regions = 256
-#
-#     classification = assignment[:, 4]
-#     regression = assignment[:, :]
-#
-#     mask_pos = classification[:] > 0
-#     num_pos = len(classification[mask_pos])
-#     if num_pos > num_regions / 2:
-#         val_locs = random.sample(range(num_pos), int(num_pos - num_regions / 2))
-#         classification[mask_pos][val_locs] = -1
-#         regression[mask_pos][val_locs, -1] = -1
-#
-#     mask_neg = classification[:] == 0
-#     num_neg = len(classification[mask_neg])
-#     if len(classification[mask_neg]) + num_pos > num_regions:
-#         val_locs = random.sample(range(num_neg), int(num_neg - num_pos))
-#         classification[mask_neg][val_locs] = -1
-#
-#     classification = np.reshape(classification, [-1, 1])
-#     regression = np.reshape(regression, [-1, 5])
-#
-#     tmp_targets = [np.array(classification, dtype=np.float32),
-#                    np.array(regression, dtype=np.float32)]
-#
-#     return tmp_targets
-
-def encode_box(box, anchor):
+def encode_box(box, anchor, variance):
     """
     Encode the single box to offset format.
+    :param variance: tuple, variance used, with shape (4,)
     :param box: numpy array, the real box with format (x_min,y_min,x_max,y_max)
     :param anchor: numpy array
     :return: the encoded box
@@ -139,38 +62,14 @@ def encode_box(box, anchor):
 
     result[:2] = box_center - anchor_center
     result[:2] /= anchor_wh
-    result[:2] *= 4
+
     result[2:4] = np.log(box_wh / anchor_wh)
-    result[2:4] *= 4
+    result[0] *= variance[0]
+    result[1] *= variance[1]
+    result[2] *= variance[2]
+    result[3] *= variance[3]
 
     return result
-
-
-def encode_label(pos, anchor):
-    loc = pos[:, :4].astype(np.float64) / Config.input_dim
-    results = np.zeros(shape=(len(anchor), 6))
-    results[:,0] = -1
-    negative_set = np.array([i for i in range(0, len(anchor))])
-    for i in range(0, len(loc)):
-        iou = calculate_iou(loc[i], anchor)
-
-        positive_index = iou > Config.rpn_max_overlap
-        k = np.argwhere(positive_index is True).tolist()
-        if len(k) == 0:
-            max_index = np.argmax(iou)
-            k.append(max_index)
-
-        for j in k:
-            box = encode_box(loc[i], anchor[j])
-            if results[j, 5] < iou[j]:
-                results[j, 0:4] = box
-                results[j, 4] = 1
-                results[j, 5] = iou[j]
-
-        negative_index = np.where(iou < Config.rpn_min_overlap)
-        negative_set = np.intersect1d(negative_set, negative_index)
-    results[negative_set, 4] = -1
-    return np.expand_dims(results[:, 4], -1), results[:, 0:5]
 
 
 def pos2area(input_pos, input_dim, rpn_stride):
@@ -354,7 +253,133 @@ def transform_box(box, original_shape, method):
     return box
 
 
-def data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Reshape):
+def generate_random_position(input_dim, rpn_stride):
+    x = random.randint(0, np.ceil(input_dim / rpn_stride) - 1)
+    y = random.randint(0, np.ceil(input_dim / rpn_stride) - 1)
+    x_ = random.randint(x + 1, np.ceil(input_dim / rpn_stride))
+    y_ = random.randint(y + 1, np.ceil(input_dim / rpn_stride))
+    return [x, y, x_, y_]
+
+
+def encode_label_for_rpn(pos, anchor):
+    """
+    This function generate the label Y for training of a single input image.
+    :param pos: numpy array, the position of boxes
+    :param anchor: numpy array
+    :return: Y1: the confidence of the box to be ROI
+    Y2: the encoded array of the boxes
+    """
+    loc = pos[:, :4].astype(np.float64) / Config.input_dim
+    results = np.zeros(shape=(len(anchor), 6))
+    results[:, 0] = -1
+    negative_set = np.array([i for i in range(0, len(anchor))])
+    for i in range(0, len(loc)):
+        iou = calculate_iou(loc[i], anchor)
+
+        positive_index = iou > Config.rpn_max_overlap
+        k = np.argwhere(positive_index is True).tolist()
+        if len(k) == 0:
+            max_index = np.argmax(iou)
+            k.append(max_index)
+
+        for j in k:
+            box = encode_box(loc[i], anchor[j], variance=Config.rpn_variance)
+            if results[j, 5] < iou[j]:
+                results[j, 0:4] = box
+                results[j, 4] = 1
+                results[j, 5] = iou[j]
+
+        negative_index = np.where(iou < Config.rpn_min_overlap)
+        negative_set = np.intersect1d(negative_set, negative_index)
+    results[negative_set, 4] = 0
+    return np.expand_dims(results[:, 4], -1), results[:, 0:5]
+
+
+def encode_label_for_classifier(image_boxes):
+    box_list = []
+    gt_list = []
+    label_list = []
+    for i in image_boxes:
+        x_min = int(round(i[0] / Config.rpn_stride))
+        y_min = int(round(i[1] / Config.rpn_stride))
+        x_max = int(round(i[2] / Config.rpn_stride))
+        y_max = int(round(i[3] / Config.rpn_stride))
+        box_list.append([x_min, y_min, x_max, y_max])
+        gt_list.append([i[0] / Config.input_dim,
+                        i[1] / Config.input_dim,
+                        i[2] / Config.input_dim,
+                        i[3] / Config.input_dim])
+        label_list.append(i[4])
+    if len(box_list) % Config.classifier_train_batch != 0:
+        t = len(box_list) // Config.classifier_train_batch
+        batch = (t + 1) * Config.classifier_train_batch
+        for j in range(0, batch - len(box_list)):
+            position = generate_random_position(Config.input_dim, Config.rpn_stride)
+            box_list.append(position)
+            label_list.append(0)
+
+    X2 = np.array(box_list)
+    X2[:, 2] = X2[:, 2] - X2[:, 0]
+    X2[:, 3] = X2[:, 3] - X2[:, 1]
+    box_list = np.array(box_list).astype(np.float)
+    gt_list = np.array(gt_list).astype(np.float)
+    box_list[:, 0] /= np.ceil(Config.input_dim / Config.rpn_stride)
+    box_list[:, 1] /= np.ceil(Config.input_dim / Config.rpn_stride)
+    box_list[:, 2] /= np.ceil(Config.input_dim / Config.rpn_stride)
+    box_list[:, 3] /= np.ceil(Config.input_dim / Config.rpn_stride)
+    Y1 = np.zeros(shape=(len(box_list), 1 + len(Config.class_names)), dtype=np.int)
+    Y2 = np.zeros(shape=(len(box_list), 8 * len(Config.class_names)))
+
+    results = np.zeros(shape=(len(box_list), 6))
+    for i in range(0, len(box_list)):
+        iou = calculate_iou(box_list[i], gt_list)
+
+        positive_index = iou > Config.rpn_max_overlap
+        k = np.argwhere(positive_index > 0).tolist()
+        if len(k) == 0:
+            max_index = np.argmax(iou)
+            k.append(max_index)
+
+        for j in k:
+            box = encode_box(np.squeeze(box_list[i]), np.squeeze(gt_list[j]), Config.classifier_variance)
+            if results[j, 5] < iou[j]:
+                results[j, 0:4] = box
+                results[j, 4] = 1
+                results[j, 5] = iou[j]
+                Y1[i, label_list[i]] = 1
+    index = np.argmax(Y1, axis=1) == 0
+    Y1[index, -1] = 1
+
+    for i in range(0, len(box_list)):
+        if results[i, 4] == 1:
+            Y2[i, 4 * label_list[i]:4 * (label_list[i] + 1)] = [1, 1, 1, 1]
+            Y2[i, 4 * len(Config.class_names) + 4 * label_list[i]:4 * len(Config.class_names) + 4 * (
+                    label_list[i] + 1)] = results[i, 0:4]
+
+    X2 = np.reshape(X2, (-1, Config.classifier_train_batch, 4))
+    Y1 = np.reshape(Y1, (-1, Config.classifier_train_batch, len(Config.class_names) + 1))
+    Y2 = np.reshape(Y2, (-1, Config.classifier_train_batch, 8 * len(Config.class_names)))
+    return X2, Y1, Y2
+
+
+def classifier_data_generator(annotation_path, method=PMethod.Reshape):
+    with open(annotation_path, "r", encoding="utf-8") as f:
+        annotation_lines = f.readlines()
+    # np.random.shuffle(annotation_lines)
+    while True:
+        for term in annotation_lines:
+            line = term.split()
+            img_path = line[0]
+            img_box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]], dtype=np.int)
+            image, o_s = process_input_image(img_path, method)
+            u = transform_box(img_box, o_s, method)
+            roi, class_conf, pos = encode_label_for_classifier(u)
+            yield (
+                {'image': np.expand_dims(np.array(image),axis=0), 'roi': roi},
+                {'classification': class_conf, 'regression': pos})
+
+
+def rpn_data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Reshape):
     with open(annotation_path, "r", encoding="utf-8") as f:
         annotation_lines = f.readlines()
     # np.random.shuffle(annotation_lines)
@@ -369,7 +394,7 @@ def data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Reshap
             img_box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]], dtype=np.int)
             x, o_s = process_input_image(img_path, method)
             u = transform_box(img_box, o_s, method)
-            flag, pos = encode_label(u, anchors)
+            flag, pos = encode_label_for_rpn(u, anchors)
             X.append(x)
             flag_list.append(flag)
             pos_list.append(pos)

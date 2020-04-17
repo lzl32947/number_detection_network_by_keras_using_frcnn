@@ -5,7 +5,7 @@ import keras.backend as K
 from keras.utils import plot_model
 
 from config.Configs import Config
-from model.classifier import classifier_model
+from model.classifier import classifier_model, classifier_model_for_train
 from model.rpn import rpn_model
 
 
@@ -31,10 +31,13 @@ def RPN_model(weight_file=None, show_image=False, show_summary=False):
     return model
 
 
-def Classifier_model(weight_file=None, show_image=False, show_summary=False):
+def Classifier_model(for_train=False, weight_file=None, show_image=False, show_summary=False):
     if weight_file is None:
         weight_file = []
-    model = classifier_model()
+    if for_train:
+        model = classifier_model_for_train()
+    else:
+        model = classifier_model()
     for i in weight_file:
         model.load_weights(i, skip_mismatch=True, by_name=True)
     if show_image:

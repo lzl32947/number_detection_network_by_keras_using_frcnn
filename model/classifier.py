@@ -3,6 +3,7 @@ from keras.models import Model
 from keras.utils import plot_model
 
 from model.layers.ROIPoolingConv import RoiPoolingConv
+from model.resnet_50 import ResNet50
 
 
 def identity_block_td(input_tensor, kernel_size, filters, stage, block, trainable=True):
@@ -80,10 +81,10 @@ def classifier_net(feature_map, roi_region, num_rois, nb_classes=11):
     out = TimeDistributed(Flatten())(out)
     # 输出bbox_pred
     out_class = TimeDistributed(Dense(nb_classes, activation='softmax', kernel_initializer='zero'),
-                                name='dense_class_{}'.format(nb_classes))(out)
+                                name='classification')(out)
     # 输出class_prob
     out_regr = TimeDistributed(Dense(4 * (nb_classes - 1), activation='linear', kernel_initializer='zero'),
-                               name='dense_regress_{}'.format(nb_classes))(out)
+                               name='regression')(out)
     return [out_class, out_regr]
 
 
@@ -92,4 +93,13 @@ def classifier_model():
     roi_region = Input(shape=(None, 4))
     out = classifier_net(feature_map, roi_region, 32)
     model_classifier = Model(inputs=[feature_map, roi_region], outputs=out)
+    return model_classifier
+
+
+def classifier_model_for_train():
+    image_input = Input(shape=(None, None, 3), name="image")
+    roi_region = Input(shape=(None, 4), name="roi")
+    feature_map = ResNet50(image_input)
+    out = classifier_net(feature_map, roi_region, 32)
+    model_classifier = Model(inputs=[image_input, roi_region], outputs=out)
     return model_classifier

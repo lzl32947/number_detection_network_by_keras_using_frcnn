@@ -38,8 +38,8 @@ def decode_classifier_result(cls, regr, roi):
 def decode_boxes(predict_loc, anchor):
     """
     Reformat the prediction position from (cx,cy,w,h) to (x_min,y_min,x_max,y_max)
-    :param predict_loc: tuple, indicates single prediction position
-    :param anchor: tuple, indicates single anchor
+    :param predict_loc: tuple, indicates prediction position
+    :param anchor: tuple, indicates anchor
     :return: tuple, the position of the decoded box
     """
     anchor_width = anchor[:, 2] - anchor[:, 0]
@@ -112,10 +112,10 @@ def rpn_output(predictions, anchors, top_k, confidence_threshold=0.5):
     result = []
     for i in range(0, batch_size):
         decoded_positions = decode_boxes(box_loc[i], anchors)
-        confidence = box_conf[i:, :, 0]
-        confidence_mask = np.where(confidence > confidence_threshold)
+        confidence = box_conf[i, :, 0]
+        confidence_mask = np.where(confidence > confidence_threshold)[0]
 
-        if not confidence_mask:
+        if len(confidence_mask) == 0:
             result.append(np.zeros(shape=(1, 5), dtype=np.float))
         else:
             boxes_to_process = decoded_positions[confidence_mask]
@@ -129,9 +129,11 @@ def rpn_output(predictions, anchors, top_k, confidence_threshold=0.5):
                                                                    iou_threshold=Config.iou_threshold),
                                       feed_dict=feed_dict)
             good_boxes = boxes_to_process[idx]
-            confs = confs_to_process[idx][:, 0]
+            confs = confs_to_process[idx]
+            confs = np.reshape(confs, (len(confs), 1))
             raw_result = np.concatenate((confs, good_boxes), axis=1)
             sort_index = np.argsort(raw_result[:, 0])[::-1]
             single_result = raw_result[sort_index]
             single_result = single_result[:top_k]
             result.append(single_result)
+    return result
