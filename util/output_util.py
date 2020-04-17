@@ -10,10 +10,10 @@ def decode_classifier_result(cls, regr, roi):
     (x, y, w, h) = roi
     cls_num = np.argmax(cls)
     (tx, ty, tw, th) = regr[4 * cls_num:4 * (cls_num + 1)]
-    tx /= Config.classifier_regr_std[0]
-    ty /= Config.classifier_regr_std[1]
-    tw /= Config.classifier_regr_std[2]
-    th /= Config.classifier_regr_std[3]
+    tx /= Config.classifier_variance[0]
+    ty /= Config.classifier_variance[1]
+    tw /= Config.classifier_variance[2]
+    th /= Config.classifier_variance[3]
 
     cx = x + w / 2.
     cy = y + h / 2.

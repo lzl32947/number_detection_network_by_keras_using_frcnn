@@ -46,7 +46,7 @@ class Config(object):
     # the threshold of IOU in RPN result when running NMS
     iou_threshold = 0.7
     # identifier threshold
-    identifier_threshold = 0.3
+    identifier_threshold = 0.1
     # identifier threshold for NMS
     identifier_threshold_nms = 0.4
     # classifier train batch

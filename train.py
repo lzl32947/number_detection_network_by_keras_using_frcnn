@@ -98,7 +98,9 @@ def rpn_train():
     anchors = get_anchors(
         (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
         (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
-    rpn_model = RPN_model([os.path.join(Config.weight_dir, "voc_weights.h5"), ], show_image=False)
+    rpn_model = RPN_model([os.path.join(Config.checkpoint_dir,
+                                        "20200415_185557/rpn_ep005-loss1.270-val_loss1.319-anchor.h5"), ],
+                          show_image=False)
     rpn_model.compile(loss={
         'regression': smooth_l1(),
         'classification': cls_loss()
@@ -150,12 +152,21 @@ def class_loss_cls(y_true, y_pred):
 
 def classifier_train():
     init_session()
-    classifier_model = Classifier_model([os.path.join(Config.weight_dir, "voc_weights.h5"), ], show_image=False)
+    classifier_model = Classifier_model(for_train=True,
+                                        weight_file=[os.path.join(Config.checkpoint_dir,
+                                                                  "20200417_214025/rpn_ep003-loss0.159-val_loss0.188-rpn.h5"), ],
+                                        show_image=False)
+
+    for layer in classifier_model.layers:
+        layer.trainable = False
+    for k in range(-37, 0):
+        classifier_model.layers[k].trainable = True
+
     classifier_model.compile(loss=[
         class_loss_cls,
         class_loss_regr(len(Config.class_names))
     ],
-        metrics={"classification": 'accuracy'}, optimizer=keras.optimizers.Adam(lr=1e-5)
+        metrics={"classification_1": 'accuracy'}, optimizer=keras.optimizers.Adam(lr=1e-5)
     )
     time = datetime.now().strftime('%Y%m%d_%H%M%S')
     checkpoint_dir = os.path.join(Config.checkpoint_dir, time)

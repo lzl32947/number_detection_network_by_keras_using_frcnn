@@ -1,5 +1,5 @@
 import random
-
+import tensorflow as tf
 from config.Configs import Config, PMethod
 import numpy as np
 import keras.backend as K
@@ -365,7 +365,7 @@ def encode_label_for_classifier(image_boxes):
 def classifier_data_generator(annotation_path, method=PMethod.Reshape):
     with open(annotation_path, "r", encoding="utf-8") as f:
         annotation_lines = f.readlines()
-    # np.random.shuffle(annotation_lines)
+    np.random.shuffle(annotation_lines)
     while True:
         for term in annotation_lines:
             line = term.split()
@@ -375,14 +375,14 @@ def classifier_data_generator(annotation_path, method=PMethod.Reshape):
             u = transform_box(img_box, o_s, method)
             roi, class_conf, pos = encode_label_for_classifier(u)
             yield (
-                {'image': np.expand_dims(np.array(image),axis=0), 'roi': roi},
-                {'classification': class_conf, 'regression': pos})
+                {'image': np.expand_dims(np.array(image), axis=0), 'roi': roi},
+                {'classification_1': class_conf, 'regression_1': pos})
 
 
 def rpn_data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Reshape):
     with open(annotation_path, "r", encoding="utf-8") as f:
         annotation_lines = f.readlines()
-    # np.random.shuffle(annotation_lines)
+    np.random.shuffle(annotation_lines)
     X = []
     flag_list = []
     pos_list = []

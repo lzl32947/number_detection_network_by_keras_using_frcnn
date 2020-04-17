@@ -41,9 +41,10 @@ def zoom_image(image):
     return new_img
 
 
-def draw_image(image_path, result_list, method, show_label=True, show_conf=True, return_image=False):
+def draw_image(image_path, result_list, method, show_label=True, show_conf=True, return_image=False, print_result=True):
     """
     Draw the image and show it.
+    :param print_result: bool, whether to print the identification result to console
     :param image_path: str, the original image
     :param result_list: list, the list of the result, in format of (box, conf, index)
     :param method: PMethod class, the method to process the image
@@ -55,7 +56,7 @@ def draw_image(image_path, result_list, method, show_label=True, show_conf=True,
     image = Image.open(image_path)
     shape = np.array(image).shape
 
-    font_size = max(shape[0] // 20, 5)
+    font_size = max(shape[0] // 20, 10)
     font = ImageFont.truetype(os.path.join(Config.font_dir, "simhei.ttf"), font_size)
 
     draw = Draw(image)
@@ -69,7 +70,7 @@ def draw_image(image_path, result_list, method, show_label=True, show_conf=True,
     height_offset = (Config.input_dim - new_height) // 2
     width_offset /= Config.input_dim
     height_offset /= Config.input_dim
-
+    print("identification result:")
     for box, conf, index in result_list:
         if method == PMethod.Reshape:
             x_min = shape[1] * box[0]
@@ -116,6 +117,10 @@ def draw_image(image_path, result_list, method, show_label=True, show_conf=True,
             if show_conf:
                 draw.text((x_min + 2, y_min + 2), "{:.2f}%".format(conf * 100), font=font,
                           fill=(r, g, b))
+        if print_result:
+            print("class:{}\tlocation:{},{},{},{}\tconf:{:.2f}%".format(int(index), int(x_min), int(y_min), int(x_max),
+                                                                        int(y_max), conf * 100))
+    print("identification result end.")
     if not return_image:
         image.show()
     else:

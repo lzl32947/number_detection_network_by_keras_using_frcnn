@@ -14,11 +14,11 @@ if __name__ == '__main__':
         (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
         (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
     rpn_model = RPN_model(weight_file=[os.path.join(Config.checkpoint_dir,
-                                                    "20200415_185557/rpn_ep005-loss1.270-val_loss1.319-anchor.h5"), ],
+                                                    "20200417_214025/rpn_ep003-loss0.159-val_loss0.188-rpn.h5"), ],
                           show_image=True)
     classifier_model = Classifier_model(for_train=False,
                                         weight_file=[os.path.join(Config.checkpoint_dir,
-                                                                  "20200417_154117/classifier_ep009-loss0.657-val_loss0.778-classifier.h5"), ],
+                                                                  "20200417_221106/classifier_ep016-loss0.284-val_loss0.278-classifier.h5"), ],
                                         show_image=True)
     image_list = []
     # for root, dirs, files in os.walk(r"G:\data_stored\generated_train"):
@@ -26,20 +26,18 @@ if __name__ == '__main__':
     #         path = os.path.join(root, image_file)
     #         image_list.append(path)
 
-    with open(Config.valid_annotation_path, "r") as f:
+    with open(Config.train_annotation_path, "r") as f:
         for line in f:
             image_list.append(line.split(" ")[0])
-    random.shuffle(image_list)
     for f in image_list:
         image, shape = process_input_image(f, PMethod.Reshape)
         image = np.expand_dims(image, axis=0)
         predictions = rpn_model.predict(image)
         res = rpn_output(predictions, anchors, Config.rpn_result_batch)[0]
 
-        k = np.where(res[:, 0] > 0.5)
         r = []
-        for item in k[0]:
-            r.append([res[item][1:5], res[item][0], 0])
+        for i in range(0, len(res)):
+            r.append([res[i][1:5], res[i][0], 0])
         draw_image(f, r, PMethod.Reshape, show_label=False)
 
         selected_area = pos2area(res[:, 1:], Config.input_dim, Config.rpn_stride)
