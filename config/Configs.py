@@ -20,6 +20,7 @@ class Config(object):
     test_annotation_path = "data/test_annotation.txt"
     valid_annotation_path = "data/valid_annotation.txt"
 
+    single_digits_dir = "data/single_digits"
     # the default input of the image
     input_dim = 600
     # define the size of anchor_box

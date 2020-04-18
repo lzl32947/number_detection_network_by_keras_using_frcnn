@@ -93,7 +93,7 @@ def smooth_l1(sigma=1.0):
     return _smooth_l1
 
 
-def rpn_train():
+def rpn_train(use_generator=False):
     init_session()
     anchors = get_anchors(
         (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
@@ -120,11 +120,12 @@ def rpn_train():
     early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1)
 
     rpn_model.fit_generator(
-        rpn_data_generator(Config.train_annotation_path, anchors, batch_size=2, method=PMethod.Reshape),
+        rpn_data_generator(Config.train_annotation_path, anchors, batch_size=2, method=PMethod.Reshape,
+                           use_generator=use_generator),
         steps_per_epoch=1000,
         epochs=100,
         validation_data=rpn_data_generator(Config.valid_annotation_path, anchors, batch_size=2,
-                                           method=PMethod.Reshape),
+                                           method=PMethod.Reshape, use_generator=use_generator),
         validation_steps=100,
         initial_epoch=0,
         callbacks=[logging, checkpoint],
@@ -150,11 +151,14 @@ def class_loss_cls(y_true, y_pred):
     return K.mean(categorical_crossentropy(y_true[0, :, :], y_pred[0, :, :]))
 
 
-def classifier_train():
+def classifier_train(use_generator=False):
     init_session()
     classifier_model = Classifier_model(for_train=True,
                                         weight_file=[os.path.join(Config.checkpoint_dir,
-                                                                  "20200417_214025/rpn_ep003-loss0.159-val_loss0.188-rpn.h5"), ],
+                                                                  "20200417_221106/classifier_ep016-loss0.284-val_loss0.278-classifier.h5"),
+                                            os.path.join(Config.checkpoint_dir,
+                                                                  "20200417_232828/rpn_ep005-loss0.221-val_loss0.151-rpn.h5"),
+                                                     ],
                                         show_image=False)
 
     for layer in classifier_model.layers:
@@ -180,11 +184,11 @@ def classifier_train():
         monitor='val_loss', save_weights_only=True, save_best_only=True, period=1)
 
     classifier_model.fit_generator(
-        classifier_data_generator(Config.train_annotation_path, method=PMethod.Reshape),
+        classifier_data_generator(Config.train_annotation_path, method=PMethod.Reshape, use_generator=use_generator),
         steps_per_epoch=1000,
         epochs=100,
         validation_data=classifier_data_generator(Config.valid_annotation_path,
-                                                  method=PMethod.Reshape),
+                                                  method=PMethod.Reshape, use_generator=use_generator),
         validation_steps=100,
         initial_epoch=0,
         callbacks=[logging, checkpoint],
@@ -192,4 +196,5 @@ def classifier_train():
 
 
 if __name__ == '__main__':
-    classifier_train()
+    # rpn_train(use_generator=True)
+    classifier_train(use_generator=True)

@@ -6,6 +6,7 @@ import keras.backend as K
 import matplotlib.pyplot as plt
 from PIL import Image
 
+from util.image_generator import get_image_number_list, generate_single_image
 from util.image_util import zoom_image, resize_image
 
 
@@ -174,14 +175,13 @@ def process_pixel(img_array):
     return img_array
 
 
-def process_input_image(image_path, method=PMethod.Zoom):
+def process_input_image(image, method=PMethod.Zoom):
     """
     Process the input image.
-    :param image_path: str, the path to original image
+    :param image: PIL.Image object
     :param method: PMethod class
     :return: numpy array of the processed image
     """
-    image = Image.open(image_path)
     shape = np.array(image).shape
     if method == PMethod.Zoom:
         new_image = zoom_image(image)
@@ -362,38 +362,56 @@ def encode_label_for_classifier(image_boxes):
     return X2, Y1, Y2
 
 
-def classifier_data_generator(annotation_path, method=PMethod.Reshape):
-    with open(annotation_path, "r", encoding="utf-8") as f:
-        annotation_lines = f.readlines()
-    np.random.shuffle(annotation_lines)
+def classifier_data_generator(annotation_path, method=PMethod.Reshape, use_generator=False):
+    if use_generator:
+        annotation_lines = []
+        img_list = get_image_number_list()
+    else:
+        with open(annotation_path, "r", encoding="utf-8") as f:
+            annotation_lines = f.readlines()
+        np.random.shuffle(annotation_lines)
+        img_list = []
     while True:
-        for term in annotation_lines:
-            line = term.split()
-            img_path = line[0]
-            img_box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]], dtype=np.int)
-            image, o_s = process_input_image(img_path, method)
-            u = transform_box(img_box, o_s, method)
+        if use_generator:
+            img, box = generate_single_image(img_list)
+            image, o_s = process_input_image(img, method)
+            u = transform_box(box, o_s, method)
             roi, class_conf, pos = encode_label_for_classifier(u)
             yield (
                 {'image': np.expand_dims(np.array(image), axis=0), 'roi': roi},
                 {'classification_1': class_conf, 'regression_1': pos})
+        else:
+            for term in annotation_lines:
+                line = term.split()
+                img_path = line[0]
+                img_box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]], dtype=np.int)
+                img = Image.open(img_path)
+                image, o_s = process_input_image(img, method)
+                u = transform_box(img_box, o_s, method)
+                roi, class_conf, pos = encode_label_for_classifier(u)
+                yield (
+                    {'image': np.expand_dims(np.array(image), axis=0), 'roi': roi},
+                    {'classification_1': class_conf, 'regression_1': pos})
 
 
-def rpn_data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Reshape):
-    with open(annotation_path, "r", encoding="utf-8") as f:
-        annotation_lines = f.readlines()
-    np.random.shuffle(annotation_lines)
+def rpn_data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Reshape, use_generator=False):
+    if use_generator:
+        annotation_lines = []
+        img_list = get_image_number_list()
+    else:
+        with open(annotation_path, "r", encoding="utf-8") as f:
+            annotation_lines = f.readlines()
+        np.random.shuffle(annotation_lines)
+        img_list = []
     X = []
     flag_list = []
     pos_list = []
     count = 0
     while True:
-        for term in annotation_lines:
-            line = term.split()
-            img_path = line[0]
-            img_box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]], dtype=np.int)
-            x, o_s = process_input_image(img_path, method)
-            u = transform_box(img_box, o_s, method)
+        if use_generator:
+            image, box = generate_single_image(img_list)
+            x, o_s = process_input_image(image, method)
+            u = transform_box(box, o_s, method)
             flag, pos = encode_label_for_rpn(u, anchors)
             X.append(x)
             flag_list.append(flag)
@@ -406,3 +424,24 @@ def rpn_data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Re
                 X = []
                 flag_list = []
                 pos_list = []
+        else:
+            for term in annotation_lines:
+                line = term.split()
+                img_path = line[0]
+                img_box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]], dtype=np.int)
+                image = Image.open(img_path)
+                x, o_s = process_input_image(image, method)
+                u = transform_box(img_box, o_s, method)
+                flag, pos = encode_label_for_rpn(u, anchors)
+                X.append(x)
+                flag_list.append(flag)
+                pos_list.append(pos)
+                count += 1
+                if count == batch_size:
+                    count = 0
+                    yield (
+                        {'input_1': np.array(X)},
+                        {'classification': np.array(flag_list), 'regression': np.array(pos_list)})
+                    X = []
+                    flag_list = []
+                    pos_list = []
