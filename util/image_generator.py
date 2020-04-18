@@ -41,44 +41,40 @@ def get_image_number_list():
 
 
 def generate_single_image(single_image_list):
+    """
+    Return the generated image and the ground truth box.
+    :param single_image_list: list, the file path to single image
+    :return: the image array, the box
+    """
     while True:
         number_list = []
-        # random height
         image_height = random.randint(40, 60)
-        # random width
         image_width = random.randint(image_height * 4, image_height * 8)
-        # add_image
 
         new_img = np.random.rand(image_height, image_width, 3)
         new_img = new_img * 255
         new_img = new_img.astype(np.uint8)
         new_img = Image.fromarray(new_img)
-        # Add number in that
+
         for i in range(0, 8):
             pick_num = random.randint(0, len(Config.class_names) - 1)
             index = random.randint(0, len(single_image_list[pick_num]) - 1)
-            # open this
             number_image = Image.open(single_image_list[pick_num][index])
-            # calculate shape
             width = np.shape(number_image)[1]
             height = np.shape(number_image)[0]
             if len(number_list) > 0:
-                # the list is not empty
-                # define times for trail, after which the picked number should be abandon
                 try_time = 10
                 while try_time > 0:
                     x_min = random.randint(0, image_width - width - 1)
                     y_min = random.randint(0, image_height - height - 1)
                     x_max = x_min + width
                     y_max = y_min + height
-                    # if conflict with pre-generated number, then abandon this
                     flag_conflict = False
                     for item_dict in number_list:
                         if rect_cross(x_min, y_min, x_max, y_max, item_dict[0], item_dict[1],
                                       item_dict[2], item_dict[3]):
                             flag_conflict = True
                             break
-                    # not conflict, add this to list
                     if not flag_conflict:
                         number_dict = [
                             x_min,
@@ -90,16 +86,13 @@ def generate_single_image(single_image_list):
                         new_img.paste(number_image, (x_min, y_min))
                         number_list.append(number_dict)
                         break
-                    # conflict, abandon this
                     else:
                         try_time -= 1
 
                 if try_time == 0:
-                    # go for picking another number and retry this.
                     continue
 
             else:
-                # the list is empty and can directly add that into list
                 x_min = random.randint(0, image_width - width - 1)
                 y_min = random.randint(0, image_height - height - 1)
                 x_max = x_min + width

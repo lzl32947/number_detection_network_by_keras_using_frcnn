@@ -4,8 +4,14 @@ import tensorflow as tf
 import keras.backend as K
 
 
-# TODO: Rewrite the function
 def decode_classifier_result(cls, regr, roi):
+    """
+    Decode the classifier model result to boxes.
+    :param cls: numpy array, the result for classification from the classifier model
+    :param regr: numpy array, the result for regression from the classifier model
+    :param roi: numpy array, the ROIs from the RPN model
+    :return: box with format (xmin,ymin,xmax,ymax),class,label
+    """
     label = np.argmax(cls)
     (x, y, w, h) = roi
     cls_num = np.argmax(cls)
@@ -72,6 +78,15 @@ def decode_boxes(predict_loc, anchor):
 
 
 def nms_for_out(all_labels, all_confs, all_bboxes, num_classes, nms):
+    """
+    NMS for the classifier model.
+    :param all_labels: numpy array, the array of all result that decoded from classifier model
+    :param all_confs: numpy array, the confidence of all result that decoded from classifier model
+    :param all_bboxes: numpy array, the boxes of all result that decoded from classifier model
+    :param num_classes: int, the length of all classes
+    :param nms: float in range (0,1), the threshold for NMS
+    :return: the list of box, confidence and label
+    """
     results = []
     boxes = tf.placeholder(dtype='float32', shape=(None, 4))
     scores = tf.placeholder(dtype='float32', shape=(None,))

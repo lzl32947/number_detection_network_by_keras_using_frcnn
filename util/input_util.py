@@ -29,6 +29,13 @@ def calculate_iou(pos, anchors):
 
 
 def pos2label(loc, cls, anc):
+    """
+    Encode the position to the label
+    :param loc: numpy array, the position of the box
+    :param cls: int, the class of the box
+    :param anc: numpy array, the anchor
+    :return: the encoded position
+    """
     encoded_box = np.zeros((5,))
     box_center = 0.5 * (loc[:2] + loc[2:])
     box_wh = loc[2:] - loc[:2]
@@ -254,6 +261,12 @@ def transform_box(box, original_shape, method):
 
 
 def generate_random_position(input_dim, rpn_stride):
+    """
+    Generate the random position for the pasted image.
+    :param input_dim: int, the dimension of the input image
+    :param rpn_stride: int, the proportion of the input dimension and the feature map
+    :return: the position
+    """
     x = random.randint(0, np.ceil(input_dim / rpn_stride) - 1)
     y = random.randint(0, np.ceil(input_dim / rpn_stride) - 1)
     x_ = random.randint(x + 1, np.ceil(input_dim / rpn_stride))
@@ -263,7 +276,7 @@ def generate_random_position(input_dim, rpn_stride):
 
 def encode_label_for_rpn(pos, anchor):
     """
-    This function generate the label Y for training of a single input image.
+    This function generate the label Y for training of a single input image for the RPN model.
     :param pos: numpy array, the position of boxes
     :param anchor: numpy array
     :return: Y1: the confidence of the box to be ROI
@@ -296,6 +309,13 @@ def encode_label_for_rpn(pos, anchor):
 
 
 def encode_label_for_classifier(image_boxes):
+    """
+    This function generate the label Y for training of a single input image for the classifier model.
+    :param pos: numpy array, the position of boxes
+    :param anchor: numpy array
+    :return: Y1: the confidence of the box to be ROI
+    Y2: the encoded array of the boxes
+    """
     box_list = []
     gt_list = []
     label_list = []
@@ -363,6 +383,13 @@ def encode_label_for_classifier(image_boxes):
 
 
 def classifier_data_generator(annotation_path, method=PMethod.Reshape, use_generator=False):
+    """
+    The generator for training the classifier model.
+    :param annotation_path: str, the path to annotation file(if not using generator)
+    :param method: PMethod class, the method to process the input image
+    :param use_generator: bool, if use generator, the annotation file will not be used
+    :return: single training data
+    """
     if use_generator:
         annotation_lines = []
         img_list = get_image_number_list()
@@ -395,6 +422,13 @@ def classifier_data_generator(annotation_path, method=PMethod.Reshape, use_gener
 
 
 def rpn_data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Reshape, use_generator=False):
+    """
+    The generator for training the RPN model.
+    :param annotation_path: str, the path to annotation file(if not using generator)
+    :param method: PMethod class, the method to process the input image
+    :param use_generator: bool, if use generator, the annotation file will not be used
+    :return: single training data
+    """
     if use_generator:
         annotation_lines = []
         img_list = get_image_number_list()

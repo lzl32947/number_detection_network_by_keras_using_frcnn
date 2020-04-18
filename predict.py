@@ -257,7 +257,7 @@ if __name__ == '__main__':
                     prec.append(tp / (tp + fp))
                     rec.append(tp / total)
                 r, g, b = random.random(), random.random(), random.random()
-                plt.plot(rec, prec, linewidth=1, color=(r, g, b), marker='o', label="class {}".format(i))
+                plt.plot(rec, prec, linewidth=1, color=(r, g, b), marker='.', label="class {}".format(i))
                 ap = voc_ap(rec, prec)
                 ap_list[i] = ap
                 print("AP:{:.4f}".format(ap))

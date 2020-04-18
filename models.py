@@ -10,6 +10,10 @@ from model.rpn import rpn_model
 
 
 def init_session():
+    """
+    Init the tensorflow session.
+    :return: None
+    """
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)

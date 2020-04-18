@@ -43,7 +43,7 @@ def zoom_image(image):
 
 def draw_image_by_plt(image, result_list, method, show_label=True, show_conf=True, print_result=True):
     """
-    Draw the image and show it.
+    Draw the image with matplotlab.pyplot and show it.
     :param print_result: bool, whether to print the identification result to console
     :param image: PIL.Image object
     :param result_list: list, the list of the result, in format of (box, conf, index)
