@@ -1,11 +1,20 @@
 from keras import Model
 from keras.layers import *
 
-from model.resnet_50 import ResNet50
+from config.Configs import PModel, Config
+from model.base_VGG16 import vgg16
+from model.base_resnet50 import resnet50
 
 
-def rpn_net(inputs, num_anchors):
-    feature_map = ResNet50(inputs)
+def rpn_net(inputs, num_anchors, model_name):
+    if model_name == PModel.ResNet50:
+        feature_map = resnet50(inputs)
+
+    elif model_name == PModel.VGG16:
+        feature_map = vgg16(inputs)
+        Config.rpn_stride = 32
+    else:
+        raise RuntimeError("No model selected.")
     x = Conv2D(512, (3, 3), padding='same', activation='relu', kernel_initializer='normal', name='rpn_conv1')(
         feature_map)
 
@@ -19,8 +28,8 @@ def rpn_net(inputs, num_anchors):
     return [x_class, x_regr, feature_map]
 
 
-def rpn_model():
+def rpn_model(model_class):
     inputs = Input(shape=(None, None, 3))
-    output = rpn_net(inputs, 9)
+    output = rpn_net(inputs, 9, model_class)
     model = Model(inputs=inputs, outputs=output)
     return model

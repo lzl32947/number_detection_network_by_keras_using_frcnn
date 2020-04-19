@@ -2,9 +2,10 @@ from keras.layers import *
 from keras.models import Model
 from keras.utils import plot_model
 
-from config.Configs import Config
+from config.Configs import Config, PModel
+from model.base_VGG16 import vgg16
 from model.layers.ROIPoolingConv import RoiPoolingConv
-from model.resnet_50 import ResNet50
+from model.base_resnet50 import resnet50
 
 
 def identity_block_td(input_tensor, kernel_size, filters, stage, block, trainable=True):
@@ -72,9 +73,9 @@ def classifier_layers(x, input_shape, trainable=False):
     return x
 
 
-def classifier_net(feature_map, roi_region, num_rois, nb_classes=11):
+def classifier_net(feature_map, input_shape, roi_region, num_rois, nb_classes=11):
     pooling_regions = 14
-    input_shape = (num_rois, 14, 14, 1024)
+
     # proposal 层相当于 [base_layers,input_rois]
     out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([feature_map, roi_region])
     # 以下是对于feature做操作
@@ -89,18 +90,34 @@ def classifier_net(feature_map, roi_region, num_rois, nb_classes=11):
     return [out_class, out_regr]
 
 
-def classifier_model():
-    feature_map = Input(shape=(None, None, 1024), name="feature_map")
+def classifier_model(model_class):
+    if model_class == PModel.ResNet50:
+        feature_map = Input(shape=(None, None, 1024), name="feature_map")
+        input_shape = (Config.classifier_train_batch, 14, 14, 1024)
+    elif model_class == PModel.VGG16:
+        Config.rpn_stride = 32
+        feature_map = Input(shape=(None, None, 512), name="feature_map")
+        input_shape = (Config.classifier_train_batch, 14, 14, 512)
+    else:
+        raise RuntimeError("No model selected.")
     roi_region = Input(shape=(None, 4), name="roi")
-    out = classifier_net(feature_map, roi_region, Config.classifier_train_batch)
+    out = classifier_net(feature_map, input_shape, roi_region, Config.classifier_train_batch)
     model_classifier = Model(inputs=[feature_map, roi_region], outputs=out)
     return model_classifier
 
 
-def classifier_model_for_train():
+def classifier_model_for_train(model_class):
     image_input = Input(shape=(None, None, 3), name="image")
     roi_region = Input(shape=(None, 4), name="roi")
-    feature_map = ResNet50(image_input)
-    out = classifier_net(feature_map, roi_region, Config.classifier_train_batch)
+    if model_class == PModel.ResNet50:
+        input_shape = (Config.classifier_train_batch, 14, 14, 1024)
+        feature_map = resnet50(image_input)
+    elif model_class == PModel.VGG16:
+        input_shape = (Config.classifier_train_batch, 14, 14, 1024)
+        feature_map = vgg16(image_input)
+        Config.rpn_stride = 32
+    else:
+        raise RuntimeError("No model selected.")
+    out = classifier_net(feature_map, input_shape, roi_region, Config.classifier_train_batch)
     model_classifier = Model(inputs=[image_input, roi_region], outputs=out)
     return model_classifier

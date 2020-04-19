@@ -59,3 +59,9 @@ class Config(object):
 class PMethod(Enum):
     Zoom = 0
     Reshape = 1
+
+
+class PModel(Enum):
+    ResNet50 = "ResNet50"
+    VGG16 = "VGG16"
+    No = -1

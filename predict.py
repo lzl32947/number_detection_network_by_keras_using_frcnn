@@ -2,7 +2,7 @@ import os
 import random
 from PIL import Image
 import numpy as np
-from config.Configs import Config, PMethod
+from config.Configs import Config, PMethod, PModel
 from models import RPN_model, Classifier_model, init_session
 from util.image_generator import get_image_number_list, generate_single_image
 from util.image_util import draw_image, draw_image_by_plt
@@ -11,18 +11,26 @@ from util.output_util import rpn_output, decode_classifier_result, nms_for_out
 import matplotlib.pyplot as plt
 
 
-def prediction_for_image():
+def prediction_for_image(model_class=PModel.ResNet50):
     init_session()
-    anchors = get_anchors(
-        (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
-        (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    if model_class == PModel.ResNet50:
+        anchors = get_anchors(
+            (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
+            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    elif model_class == PModel.VGG16:
+        Config.rpn_stride = 32
+        anchors = get_anchors(
+            (np.floor(Config.input_dim / Config.rpn_stride), np.floor(Config.input_dim / Config.rpn_stride)),
+            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    else:
+        raise RuntimeError("No model selected.")
     rpn_model = RPN_model(weight_file=[os.path.join(Config.checkpoint_dir,
-                                                    "20200417_232828/rpn_ep005-loss0.221-val_loss0.151-rpn.h5"), ],
-                          show_image=True)
+                                                    "20200419_142603/rpn_ep010-loss0.299-val_loss0.173-rpn.h5"), ],
+                          show_image=True, model_class=model_class)
     classifier_model = Classifier_model(for_train=False,
                                         weight_file=[os.path.join(Config.checkpoint_dir,
-                                                                  "20200417_235634/classifier_ep025-loss0.097-val_loss0.022-classifier.h5"), ],
-                                        show_image=True)
+                                                                  "20200419_152308/classifier_ep007-loss0.717-val_loss1.677-classifier.h5"), ],
+                                        show_image=True, model_class=model_class)
     # for root, dirs, files in os.walk(r"G:\data_stored\generated_train"):
     #     for image_file in files:
     #         path = os.path.join(root, image_file)
@@ -93,74 +101,26 @@ def prediction_for_image():
             draw_image(raw_image, [], PMethod.Reshape)
 
 
-def prediction_for_analysis_generator(img_list, rpn_model, classifier_model, show_image=False):
-    while True:
-        raw_image, raw_list = generate_single_image(img_list)
-        image, shape = process_input_image(raw_image, PMethod.Reshape)
-        image = np.expand_dims(image, axis=0)
-        predictions = rpn_model.predict(image)
-        res = rpn_output(predictions, anchors, Config.rpn_result_batch)[0]
-
-        selected_area = pos2area(res[:, 1:], Config.input_dim, Config.rpn_stride)
-        feature_map = predictions[2]
-
-        box_list = []
-        conf_list = []
-        index_list = []
-        for batch in range(selected_area.shape[0] // 32 + 1):
-            ROIs = np.expand_dims(selected_area[32 * batch:32 * (batch + 1), :], axis=0)
-
-            if ROIs.shape[1] == 0:
-                break
-
-            if batch == selected_area.shape[0] // 32:
-                curr_shape = ROIs.shape
-                target_shape = (curr_shape[0], 32, curr_shape[2])
-                ROIs_padded = np.zeros(target_shape).astype(ROIs.dtype)
-                ROIs_padded[:, :curr_shape[1], :] = ROIs
-                ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
-                ROIs = ROIs_padded
-
-            [P_cls, P_regr] = classifier_model.predict([feature_map, ROIs])
-            for ii in range(P_cls.shape[1]):
-                if np.max(P_cls[0, ii, :]) < Config.identifier_threshold or np.argmax(P_cls[0, ii, :]) == (
-                        P_cls.shape[2] - 1):
-                    continue
-                else:
-                    box, conf, index = decode_classifier_result(P_cls[0, ii, :], P_regr[0, ii, :], ROIs[0, ii, :])
-                    box_list.append(box)
-                    conf_list.append(conf)
-                    index_list.append(index)
-        index = np.array(index_list)
-        conf = np.array(conf_list)
-        box = np.array(box_list, dtype=np.float32)
-        result_list = []
-        if len(box) > 0:
-            box[:, 0] = box[:, 0] * Config.rpn_stride / Config.input_dim
-            box[:, 1] = box[:, 1] * Config.rpn_stride / Config.input_dim
-            box[:, 2] = box[:, 2] * Config.rpn_stride / Config.input_dim
-            box[:, 3] = box[:, 3] * Config.rpn_stride / Config.input_dim
-            results = nms_for_out(np.array(index), np.array(conf), np.array(box), len(Config.class_names),
-                                  Config.identifier_threshold_nms)
-            for item in range(0, len(results)):
-                result_list.append([results[item][2:], results[item][1], results[item][0]])
-            if show_image:
-                draw_image_by_plt(raw_image, result_list, PMethod.Reshape)
-        yield result_list, raw_list, shape
-
-
-if __name__ == '__main__':
+def prediction_for_analysis(model_class=PModel.ResNet50):
     init_session()
-    anchors = get_anchors(
-        (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
-        (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    if model_class == PModel.ResNet50:
+        anchors = get_anchors(
+            (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
+            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    elif model_class == PModel.VGG16:
+        Config.rpn_stride = 32
+        anchors = get_anchors(
+            (np.floor(Config.input_dim / Config.rpn_stride), np.floor(Config.input_dim / Config.rpn_stride)),
+            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    else:
+        raise RuntimeError("No model selected.")
     model_rpn = RPN_model(weight_file=[os.path.join(Config.checkpoint_dir,
-                                                    "20200417_232828/rpn_ep005-loss0.221-val_loss0.151-rpn.h5"), ],
-                          show_image=True)
+                                                    "20200419_142603/rpn_ep010-loss0.299-val_loss0.173-rpn.h5"), ],
+                          show_image=True, model_class=model_class)
     model_classifier = Classifier_model(for_train=False,
                                         weight_file=[os.path.join(Config.checkpoint_dir,
-                                                                  "20200417_235634/classifier_ep025-loss0.097-val_loss0.022-classifier.h5"), ],
-                                        show_image=True)
+                                                                  "20200419_152308/classifier_ep007-loss0.717-val_loss1.677-classifier.h5"), ],
+                                        show_image=True, model_class=model_class)
     image_list = get_image_number_list()
     TP_list = [0] * len(Config.class_names)
     FP_list = [0] * len(Config.class_names)
@@ -170,7 +130,6 @@ if __name__ == '__main__':
     object_list = [0] * len(Config.class_names)
     ap_list = [0.0] * len(Config.class_names)
 
-
     def cross(pred_box, gt_box):
         cx = (pred_box[0] + pred_box[2]) / 2
         cy = (pred_box[1] + pred_box[3]) / 2
@@ -178,7 +137,6 @@ if __name__ == '__main__':
             return 1
         else:
             return 0
-
 
     def voc_ap(rec, prec):
         mrec = np.concatenate(([0.], rec, [1.]))
@@ -189,10 +147,9 @@ if __name__ == '__main__':
         ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
         return float(np.squeeze(ap))
 
-
     count = 0
-    for prediction_result, gt, img_shape in prediction_for_analysis_generator(image_list, model_rpn, model_classifier,
-                                                                              show_image=False):
+    for prediction_result, gt, img_shape in analysis_generator(image_list, model_rpn, model_classifier, anchors,
+                                                               show_image=False):
         pred = np.zeros(shape=(len(prediction_result), 6), dtype=np.float)
         for i in range(0, len(prediction_result)):
             pred[i, 0] = int(prediction_result[i][0][0] * img_shape[1])
@@ -270,3 +227,63 @@ if __name__ == '__main__':
             plt.close()
         if count == 1000:
             break
+
+
+def analysis_generator(img_list, rpn_model, classifier_model, anchors, show_image=False):
+    while True:
+        raw_image, raw_list = generate_single_image(img_list)
+        image, shape = process_input_image(raw_image, PMethod.Reshape)
+        image = np.expand_dims(image, axis=0)
+        predictions = rpn_model.predict(image)
+        res = rpn_output(predictions, anchors, Config.rpn_result_batch)[0]
+
+        selected_area = pos2area(res[:, 1:], Config.input_dim, Config.rpn_stride)
+        feature_map = predictions[2]
+
+        box_list = []
+        conf_list = []
+        index_list = []
+        for batch in range(selected_area.shape[0] // 32 + 1):
+            ROIs = np.expand_dims(selected_area[32 * batch:32 * (batch + 1), :], axis=0)
+
+            if ROIs.shape[1] == 0:
+                break
+
+            if batch == selected_area.shape[0] // 32:
+                curr_shape = ROIs.shape
+                target_shape = (curr_shape[0], 32, curr_shape[2])
+                ROIs_padded = np.zeros(target_shape).astype(ROIs.dtype)
+                ROIs_padded[:, :curr_shape[1], :] = ROIs
+                ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
+                ROIs = ROIs_padded
+
+            [P_cls, P_regr] = classifier_model.predict([feature_map, ROIs])
+            for ii in range(P_cls.shape[1]):
+                if np.max(P_cls[0, ii, :]) < Config.identifier_threshold or np.argmax(P_cls[0, ii, :]) == (
+                        P_cls.shape[2] - 1):
+                    continue
+                else:
+                    box, conf, index = decode_classifier_result(P_cls[0, ii, :], P_regr[0, ii, :], ROIs[0, ii, :])
+                    box_list.append(box)
+                    conf_list.append(conf)
+                    index_list.append(index)
+        index = np.array(index_list)
+        conf = np.array(conf_list)
+        box = np.array(box_list, dtype=np.float32)
+        result_list = []
+        if len(box) > 0:
+            box[:, 0] = box[:, 0] * Config.rpn_stride / Config.input_dim
+            box[:, 1] = box[:, 1] * Config.rpn_stride / Config.input_dim
+            box[:, 2] = box[:, 2] * Config.rpn_stride / Config.input_dim
+            box[:, 3] = box[:, 3] * Config.rpn_stride / Config.input_dim
+            results = nms_for_out(np.array(index), np.array(conf), np.array(box), len(Config.class_names),
+                                  Config.identifier_threshold_nms)
+            for item in range(0, len(results)):
+                result_list.append([results[item][2:], results[item][1], results[item][0]])
+            if show_image:
+                draw_image_by_plt(raw_image, result_list, PMethod.Reshape)
+        yield result_list, raw_list, shape
+
+
+if __name__ == '__main__':
+    prediction_for_image(PModel.VGG16)
