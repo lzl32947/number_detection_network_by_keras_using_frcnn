@@ -172,7 +172,7 @@ def classifier_train(use_generator=False, model_class=PModel.ResNet50):
         layer.trainable = False
     for k in range(-37, 0):
         classifier_model.layers[k].trainable = True
-    classifier_model.summary()
+    classifier_model.summary(line_length=200)
     classifier_model.compile(loss=[
         class_loss_cls,
         class_loss_regr(len(Config.class_names))
@@ -204,4 +204,4 @@ def classifier_train(use_generator=False, model_class=PModel.ResNet50):
 
 if __name__ == '__main__':
     # rpn_train(use_generator=True, model_class=PModel.VGG16)
-    classifier_train(use_generator=True, model_class=PModel.ResNet50)
+    classifier_train(use_generator=True, model_class=PModel.VGG16)

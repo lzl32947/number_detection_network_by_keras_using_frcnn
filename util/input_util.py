@@ -367,7 +367,7 @@ def encode_label_for_classifier(image_boxes):
                 results[j, 4] = 1
                 results[j, 5] = iou[j]
                 Y1[i, label_list[i]] = 1
-    index = np.argmax(Y1, axis=1) == 0
+    index = np.max(Y1, axis=1) == 0
     Y1[index, -1] = 1
 
     for i in range(0, len(box_list)):

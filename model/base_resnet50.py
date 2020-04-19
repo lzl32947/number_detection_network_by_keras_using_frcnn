@@ -51,7 +51,7 @@ def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2))
     return x
 
 
-def ResNet50(inputs):
+def resnet50(inputs):
     x = ZeroPadding2D((3, 3))(inputs)
     x = Conv2D(64, (7, 7), strides=(2, 2), name='conv1')(x)
     x = BatchNormalization(name='bn_conv1')(x)
