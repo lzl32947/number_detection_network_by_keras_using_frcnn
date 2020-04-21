@@ -75,12 +75,10 @@ def classifier_layers(x, input_shape):
 
 
 def dense_layers(x):
-    x = TimeDistributed(Flatten())(x)
-    x = TimeDistributed(Dense(4096, activation="relu"))(x)
-    x = TimeDistributed(Dropout(0.5))(x)
-    x = TimeDistributed(Dense(4096, activation="relu"))(x)
-    x = TimeDistributed(Dropout(0.5))(x)
-    return x
+    out = TimeDistributed(Flatten())(x)
+    out = TimeDistributed(Dense(4096, activation='relu'))(out)
+    out = TimeDistributed(Dense(4096, activation='relu'))(out)
+    return out
 
 
 def classifier_net(feature_map, input_shape, roi_region, num_rois, classifier_class, nb_classes):
