@@ -64,4 +64,12 @@ class PMethod(Enum):
 class PModel(Enum):
     ResNet50 = "ResNet50"
     VGG16 = "VGG16"
+    ResNet101 = "ResNet101"
+    MobileNetV2 = "MobileNetV2"
+    No = -1
+
+
+class PClassifier(Enum):
+    ResNetBase = "ResNetBase"
+    DenseBase = "DenseBase"
     No = -1

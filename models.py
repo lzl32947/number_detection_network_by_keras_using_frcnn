@@ -21,7 +21,7 @@ def init_session():
     K.set_session(sess)
 
 
-def RPN_model(weight_file=None, show_image=False, show_summary=False, model_class=PModel.ResNet50):
+def RPN_model(model_class, weight_file=None, show_image=False, show_summary=False):
     if weight_file is None:
         weight_file = []
     model = rpn_model(model_class)
@@ -36,18 +36,19 @@ def RPN_model(weight_file=None, show_image=False, show_summary=False, model_clas
     return model
 
 
-def Classifier_model(for_train=False, weight_file=None, show_image=False, show_summary=False,
-                     model_class=PModel.ResNet50):
+def Classifier_model(model_class, classifier_class, for_train=False, weight_file=None, show_image=False,
+                     show_summary=False):
     if weight_file is None:
         weight_file = []
     if for_train:
-        model = classifier_model_for_train(model_class)
+        model = classifier_model_for_train(model_class, classifier_class)
     else:
-        model = classifier_model(model_class)
+        model = classifier_model(model_class, classifier_class)
     for i in weight_file:
         model.load_weights(i, skip_mismatch=True, by_name=True)
     if show_image:
-        plot_model(model, to_file=os.path.join(Config.model_output_dir, "classifier_{}.png".format(model_class)),
+        plot_model(model, to_file=os.path.join(Config.model_output_dir,
+                                               "classifier_{}_{}.png".format(model_class, classifier_class)),
                    show_shapes=True,
                    show_layer_names=True)
     if show_summary:

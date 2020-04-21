@@ -5,13 +5,14 @@ import keras.backend as K
 from keras.backend import categorical_crossentropy
 from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 
-from config.Configs import Config, PMethod, PModel
+from config.Configs import Config, PMethod, PModel, PClassifier
 from models import init_session, RPN_model, Classifier_model
 import numpy as np
 import tensorflow as tf
 import keras
 
-from util.input_util import get_anchors, rpn_data_generator, classifier_data_generator
+from util.input_util import get_anchors, rpn_data_generator, classifier_data_generator, anchor_for_model, \
+    get_weight_file
 
 
 def cls_loss(ratio=3):
@@ -93,28 +94,17 @@ def smooth_l1(sigma=1.0):
     return _smooth_l1
 
 
-def rpn_train(use_generator=False, model_class=PModel.ResNet50):
+def rpn_train(weight_file_list, model_class, use_generator=False, batch_size=2, show_image=False):
     init_session()
 
-    rpn_model = RPN_model([os.path.join(Config.weight_dir,
-                                        "voc_weights.h5"),
-                           r"C:\Users\lzl32\.keras\models\vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5"],
-                          show_image=False, model_class=model_class)
+    rpn_model = RPN_model(weight_file=weight_file_list,
+                          show_image=show_image, model_class=model_class)
     rpn_model.compile(loss={
         'regression': smooth_l1(),
         'classification': cls_loss()
     }, optimizer=keras.optimizers.Adam(lr=1e-5), metrics=['accuracy'])
 
-    if model_class == PModel.ResNet50:
-        anchors = get_anchors(
-            (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
-            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
-    elif model_class == PModel.VGG16:
-        anchors = get_anchors(
-            (np.floor(Config.input_dim / Config.rpn_stride), np.floor(Config.input_dim / Config.rpn_stride)),
-            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
-    else:
-        raise RuntimeError("No model selected.")
+    anchors = anchor_for_model(model_class)
     time = datetime.now().strftime('%Y%m%d_%H%M%S')
     checkpoint_dir = os.path.join(Config.checkpoint_dir, time)
     log_dir = os.path.join(Config.tensorboard_log_dir, time)
@@ -123,17 +113,18 @@ def rpn_train(use_generator=False, model_class=PModel.ResNet50):
 
     logging = TensorBoard(log_dir=log_dir)
     checkpoint = ModelCheckpoint(
-        os.path.join(checkpoint_dir, 'rpn_ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}-rpn.h5'),
+        os.path.join(checkpoint_dir,
+                     'rpn_ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}-' + str(model_class) + '.h5'),
         monitor='val_loss', save_weights_only=True, save_best_only=True, period=1)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, verbose=1)
     early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1)
 
     rpn_model.fit_generator(
-        rpn_data_generator(Config.train_annotation_path, anchors, batch_size=1, method=PMethod.Reshape,
+        rpn_data_generator(Config.train_annotation_path, anchors, batch_size=batch_size, method=PMethod.Reshape,
                            use_generator=use_generator),
         steps_per_epoch=1000,
         epochs=100,
-        validation_data=rpn_data_generator(Config.valid_annotation_path, anchors, batch_size=1,
+        validation_data=rpn_data_generator(Config.valid_annotation_path, anchors, batch_size=batch_size,
                                            method=PMethod.Reshape, use_generator=use_generator),
         validation_steps=100,
         initial_epoch=0,
@@ -156,25 +147,37 @@ def class_loss_regr(num_classes):
     return class_loss_regr_fixed_num
 
 
-def class_loss_cls(y_true, y_pred):
-    return K.mean(categorical_crossentropy(y_true[0, :, :], y_pred[0, :, :]))
+def class_loss_conf(num_classes):
+    def class_loss_cls(y_true, y_pred):
+        y_true_reshape = tf.reshape(y_true, (-1, num_classes + 1))
+        y_pred_reshape = tf.reshape(y_pred, (-1, num_classes + 1))
+        return K.mean(categorical_crossentropy(y_true_reshape, y_pred_reshape))
+
+    return class_loss_cls
 
 
-def classifier_train(use_generator=False, model_class=PModel.ResNet50):
+def classifier_train(weight_file_list, model_class, classifier_class, use_generator=False, freeze_base_layer=True,
+                     show_image=False):
     init_session()
     classifier_model = Classifier_model(for_train=True,
-                                        weight_file=[os.path.join(Config.checkpoint_dir,
-                                                                  "20200419_142603/rpn_ep010-loss0.299-val_loss0.173-rpn.h5"),
-                                                     ],
-                                        show_image=False, model_class=model_class)
+                                        weight_file=weight_file_list,
+                                        show_image=show_image, model_class=model_class,
+                                        classifier_class=classifier_class)
 
-    for layer in classifier_model.layers:
-        layer.trainable = False
-    for k in range(-37, 0):
-        classifier_model.layers[k].trainable = True
-    classifier_model.summary(line_length=200)
+    if freeze_base_layer:
+        for layer in classifier_model.layers:
+            layer.trainable = False
+        if classifier_class == PClassifier.DenseBase:
+            for k in range(-8, 0):
+                classifier_model.layers[k].trainable = True
+        elif classifier_class == PClassifier.ResNetBase:
+            for k in range(-37, 0):
+                classifier_model.layers[k].trainable = True
+        else:
+            raise RuntimeError("No classifier selected.")
+    classifier_model.summary(line_length=100)
     classifier_model.compile(loss=[
-        class_loss_cls,
+        class_loss_conf(len(Config.class_names)),
         class_loss_regr(len(Config.class_names))
     ],
         metrics={"classification_1": 'accuracy'}, optimizer=keras.optimizers.Adam(lr=1e-5)
@@ -184,16 +187,16 @@ def classifier_train(use_generator=False, model_class=PModel.ResNet50):
     log_dir = os.path.join(Config.tensorboard_log_dir, time)
     os.mkdir(checkpoint_dir)
     os.mkdir(log_dir)
-
     logging = TensorBoard(log_dir=log_dir)
     checkpoint = ModelCheckpoint(
-        os.path.join(checkpoint_dir, 'classifier_ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}-classifier.h5'),
+        os.path.join(checkpoint_dir,
+                     'classifier_ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}-' + str(model_class) + '.h5'),
         monitor='val_loss', save_weights_only=True, save_best_only=True, period=1)
 
     classifier_model.fit_generator(
         classifier_data_generator(Config.train_annotation_path, method=PMethod.Reshape, use_generator=use_generator),
         steps_per_epoch=1000,
-        epochs=100,
+        epochs=500,
         validation_data=classifier_data_generator(Config.valid_annotation_path,
                                                   method=PMethod.Reshape, use_generator=use_generator),
         validation_steps=100,
@@ -203,5 +206,19 @@ def classifier_train(use_generator=False, model_class=PModel.ResNet50):
 
 
 if __name__ == '__main__':
-    # rpn_train(use_generator=True, model_class=PModel.VGG16)
-    classifier_train(use_generator=True, model_class=PModel.VGG16)
+    # rpn_train([os.path.join(Config.checkpoint_dir,
+    #                         "20200420_213637/classifier_ep004-loss0.557-val_loss0.488-PModel.MobileNetV2.h5"), ],
+    #           use_generator=True,
+    #           model_class=PModel.MobileNetV2, batch_size=2)
+    classifier_train([get_weight_file("rpn_ep027-loss0.228-val_loss0.088-PModel.VGG16.h5"), ],
+                     use_generator=True,
+                     model_class=PModel.VGG16, classifier_class=PClassifier.DenseBase, show_image=True)
+    # classifier_train([os.path.join(Config.checkpoint_dir,
+    #                                "20200420_231100/classifier_ep003-loss0.473-val_loss0.393-PModel.VGG16.h5"), ],
+    #                  use_generator=True, model_class=PModel.VGG16,
+    #                  freeze_base_layer=True)
+    # rpn_train([os.path.join(Config.weight_dir, "number_weight.h5"),
+    #            os.path.join(Config.weight_dir, "vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5"),
+    #            ],
+    #           use_generator=True,
+    #           model_class=PModel.VGG16, batch_size=1)

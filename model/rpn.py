@@ -3,15 +3,21 @@ from keras.layers import *
 
 from config.Configs import PModel, Config
 from model.base_VGG16 import vgg16
+from model.base_mobilenetv2 import mobilenetv2
+from model.base_resnet101 import resnet101
 from model.base_resnet50 import resnet50
 
 
 def rpn_net(inputs, num_anchors, model_name):
     if model_name == PModel.ResNet50:
         feature_map = resnet50(inputs)
-
+    elif model_name == PModel.ResNet101:
+        feature_map = resnet101(inputs)
     elif model_name == PModel.VGG16:
         feature_map = vgg16(inputs)
+        Config.rpn_stride = 16
+    elif model_name == PModel.MobileNetV2:
+        feature_map = mobilenetv2(inputs)
         Config.rpn_stride = 32
     else:
         raise RuntimeError("No model selected.")

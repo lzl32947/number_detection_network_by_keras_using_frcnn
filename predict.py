@@ -6,31 +6,19 @@ from config.Configs import Config, PMethod, PModel
 from models import RPN_model, Classifier_model, init_session
 from util.image_generator import get_image_number_list, generate_single_image
 from util.image_util import draw_image, draw_image_by_plt
-from util.input_util import process_input_image, get_anchors, pos2area
+from util.input_util import process_input_image, get_anchors, pos2area, anchor_for_model, get_weight_file
 from util.output_util import rpn_output, decode_classifier_result, nms_for_out
 import matplotlib.pyplot as plt
 
 
-def prediction_for_image(model_class=PModel.ResNet50):
+def prediction_for_image(rpn_weight_list, classifier_model_weight, model_class,classifier_class):
     init_session()
-    if model_class == PModel.ResNet50:
-        anchors = get_anchors(
-            (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
-            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
-    elif model_class == PModel.VGG16:
-        Config.rpn_stride = 32
-        anchors = get_anchors(
-            (np.floor(Config.input_dim / Config.rpn_stride), np.floor(Config.input_dim / Config.rpn_stride)),
-            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
-    else:
-        raise RuntimeError("No model selected.")
-    rpn_model = RPN_model(weight_file=[os.path.join(Config.checkpoint_dir,
-                                                    "20200419_142603/rpn_ep010-loss0.299-val_loss0.173-rpn.h5"), ],
+    anchors = anchor_for_model(model_class)
+    rpn_model = RPN_model(weight_file=rpn_weight_list,
                           show_image=True, model_class=model_class)
     classifier_model = Classifier_model(for_train=False,
-                                        weight_file=[os.path.join(Config.checkpoint_dir,
-                                                                  "20200419_152308/classifier_ep007-loss0.717-val_loss1.677-classifier.h5"), ],
-                                        show_image=True, model_class=model_class)
+                                        weight_file=classifier_model_weight,
+                                        show_image=True, model_class=model_class,classifier_class=classifier_class)
     # for root, dirs, files in os.walk(r"G:\data_stored\generated_train"):
     #     for image_file in files:
     #         path = os.path.join(root, image_file)
@@ -101,26 +89,14 @@ def prediction_for_image(model_class=PModel.ResNet50):
             draw_image(raw_image, [], PMethod.Reshape)
 
 
-def prediction_for_analysis(model_class=PModel.ResNet50):
+def prediction_for_analysis(rpn_weight_list, classifier_model_weight, model_class,classifier_class):
     init_session()
-    if model_class == PModel.ResNet50:
-        anchors = get_anchors(
-            (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
-            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
-    elif model_class == PModel.VGG16:
-        Config.rpn_stride = 32
-        anchors = get_anchors(
-            (np.floor(Config.input_dim / Config.rpn_stride), np.floor(Config.input_dim / Config.rpn_stride)),
-            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
-    else:
-        raise RuntimeError("No model selected.")
-    model_rpn = RPN_model(weight_file=[os.path.join(Config.checkpoint_dir,
-                                                    "20200419_142603/rpn_ep010-loss0.299-val_loss0.173-rpn.h5"), ],
+    anchors = anchor_for_model(model_class)
+    model_rpn = RPN_model(weight_file=rpn_weight_list,
                           show_image=True, model_class=model_class)
     model_classifier = Classifier_model(for_train=False,
-                                        weight_file=[os.path.join(Config.checkpoint_dir,
-                                                                  "20200419_152308/classifier_ep007-loss0.717-val_loss1.677-classifier.h5"), ],
-                                        show_image=True, model_class=model_class)
+                                        weight_file=classifier_model_weight,
+                                        show_image=True, model_class=model_class,classifier_class=classifier_class)
     image_list = get_image_number_list()
     TP_list = [0] * len(Config.class_names)
     FP_list = [0] * len(Config.class_names)
@@ -203,11 +179,11 @@ def prediction_for_analysis(model_class=PModel.ResNet50):
                 k = k[np.argsort(-k[:, 0])]
                 rec = []
                 prec = []
-                total = object_list[i]
                 tp = 0
                 fp = 0
+                total = len(k[k[:, 1] == 1])
                 for j in range(0, len(k)):
-                    if k[j, 1] > 0.5:
+                    if k[j, 1] > 0:
                         tp += 1
                     else:
                         fp += 1
@@ -285,5 +261,38 @@ def analysis_generator(img_list, rpn_model, classifier_model, anchors, show_imag
         yield result_list, raw_list, shape
 
 
+def predict_for_rpn(rpn_weight_list, model_class):
+    init_session()
+    anchor = anchor_for_model(model_class)
+    rpn_model = RPN_model(model_class,
+                          rpn_weight_list,
+                          show_image=False)
+    img_list = get_image_number_list()
+    while True:
+        raw_image, res = generate_single_image(img_list)
+        image, shape = process_input_image(raw_image, PMethod.Reshape)
+        image = np.expand_dims(image, axis=0)
+        predictions = rpn_model.predict(image)
+        result = rpn_output(predictions, anchor, Config.rpn_result_batch)[0]
+        k = np.where(result[:, 0] > 0.5)
+        r = []
+        for item in k[0]:
+            r.append([result[item][1:5], result[item][0], 0])
+        draw_image(raw_image, r, PMethod.Reshape, show_label=False)
+
+
 if __name__ == '__main__':
-    prediction_for_image(PModel.VGG16)
+    # prediction_for_analysis(
+    #     [os.path.join(Config.checkpoint_dir,
+    #                   "20200420_114334/rpn_ep012-loss0.125-val_loss0.092-PModel.ResNet101.h5"), ],
+    #     [os.path.join(Config.checkpoint_dir,
+    #                   "20200420_182004/classifier_ep034-loss0.091-val_loss0.011-PModel.ResNet101.h5"), ],
+    #     PModel.ResNet101)
+    # prediction_for_image(
+    #     [os.path.join(Config.checkpoint_dir, "20200420_215702/rpn_ep005-loss0.212-val_loss0.113-PModel.MobileNetV2.h5"), ],
+    #     [os.path.join(Config.checkpoint_dir,
+    #                   "20200421_011040/classifier_ep058-loss0.390-val_loss0.175-PModel.MobileNetV2.h5"), ],
+    #     PModel.MobileNetV2)
+    predict_for_rpn([get_weight_file("rpn_ep027-loss0.228-val_loss0.088-PModel.VGG16.h5"), ],
+                    PModel.VGG16)
+

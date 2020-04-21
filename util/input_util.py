@@ -1,6 +1,7 @@
+import os
 import random
 import tensorflow as tf
-from config.Configs import Config, PMethod
+from config.Configs import Config, PMethod, PModel
 import numpy as np
 import keras.backend as K
 import matplotlib.pyplot as plt
@@ -146,6 +147,37 @@ def shift(shape, anchors, rpn_strides):
     return shifted_anchors
 
 
+def anchor_for_model(model_class):
+    """
+    Return the anchor of different models.
+    :param model_class: PModel class
+    :return: numpy array, the anchor
+    """
+    if model_class == PModel.ResNet50:
+        Config.rpn_stride = 16
+        anchors = get_anchors(
+            (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
+            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    elif model_class == PModel.ResNet101:
+        Config.rpn_stride = 16
+        anchors = get_anchors(
+            (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
+            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    elif model_class == PModel.VGG16:
+        Config.rpn_stride = 16
+        anchors = get_anchors(
+            (np.floor(Config.input_dim / Config.rpn_stride), np.floor(Config.input_dim / Config.rpn_stride)),
+            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    elif model_class == PModel.MobileNetV2:
+        Config.rpn_stride = 32
+        anchors = get_anchors(
+            (np.floor(Config.input_dim / Config.rpn_stride), np.floor(Config.input_dim / Config.rpn_stride)),
+            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    else:
+        raise RuntimeError("No model selected.")
+    return anchors
+
+
 def get_anchors(feature_map_shape, input_shape, anchor_sizes, anchor_ratios, rpn_strides):
     """
     Generate the anchor for the RPN
@@ -267,10 +299,10 @@ def generate_random_position(input_dim, rpn_stride):
     :param rpn_stride: int, the proportion of the input dimension and the feature map
     :return: the position
     """
-    x = random.randint(0, np.ceil(input_dim / rpn_stride) - 1)
-    y = random.randint(0, np.ceil(input_dim / rpn_stride) - 1)
-    x_ = random.randint(x + 1, np.ceil(input_dim / rpn_stride))
-    y_ = random.randint(y + 1, np.ceil(input_dim / rpn_stride))
+    x = random.randint(0, np.floor(input_dim / rpn_stride) - 1)
+    y = random.randint(0, np.floor(input_dim / rpn_stride) - 1)
+    x_ = random.randint(x + 1, np.floor(input_dim / rpn_stride))
+    y_ = random.randint(y + 1, np.floor(input_dim / rpn_stride))
     return [x, y, x_, y_]
 
 
@@ -333,10 +365,17 @@ def encode_label_for_classifier(image_boxes):
     if len(box_list) % Config.classifier_train_batch != 0:
         t = len(box_list) // Config.classifier_train_batch
         batch = (t + 1) * Config.classifier_train_batch
-        for j in range(0, batch - len(box_list)):
+        j = 0
+        gt_box = np.array(box_list, dtype=np.int)
+        while j < batch - len(gt_box):
             position = generate_random_position(Config.input_dim, Config.rpn_stride)
-            box_list.append(position)
-            label_list.append(0)
+            iou_list = calculate_iou(np.array(position, dtype=np.int), gt_box)
+            if np.max(iou_list) > 0.3:
+                continue
+            else:
+                box_list.append(position)
+                label_list.append(0)
+                j += 1
 
     X2 = np.array(box_list)
     X2[:, 2] = X2[:, 2] - X2[:, 0]
@@ -479,3 +518,49 @@ def rpn_data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Re
                     X = []
                     flag_list = []
                     pos_list = []
+
+
+def get_weight_file(name):
+    """
+    Return the weight file in the logs.
+    :param name: str, the name of weight file
+    :return: str, the path to selected weight file
+    """
+    file_list = []
+    for root, dirs, files in os.walk(Config.checkpoint_dir):
+        for d in dirs:
+            dir_path = os.path.join(root, d)
+            for _r, _d, f in os.walk(dir_path):
+                for weight_file in f:
+                    if weight_file == name:
+                        file_list.append(os.path.join(dir_path, weight_file))
+                    elif name + ".h5" == weight_file:
+                        file_list.append(os.path.join(dir_path, weight_file))
+    for root, dirs, files in os.walk(Config.weight_dir):
+        for d in dirs:
+            dir_path = os.path.join(root, d)
+            for _r, _d, f in os.walk(dir_path):
+                for weight_file in f:
+                    if weight_file == name:
+                        file_list.append(os.path.join(dir_path, weight_file))
+                    elif name + ".h5" == weight_file:
+                        file_list.append(os.path.join(dir_path, weight_file))
+    if len(file_list) == 0:
+        raise RuntimeError("No weight suitable.")
+    else:
+        if len(file_list) == 1:
+            print("Use weight in {}".format(file_list[0]))
+            return file_list[0]
+        else:
+            recent_file = None
+            recent_time = 0
+            for f in file_list:
+                time = os.path.getctime(f)
+                if time > recent_time:
+                    recent_file = f
+                    recent_time = time
+            if recent_file is not None:
+                print("Use weight in {}".format(recent_file))
+                return recent_file
+            else:
+                raise RuntimeError("No weight suitable.")

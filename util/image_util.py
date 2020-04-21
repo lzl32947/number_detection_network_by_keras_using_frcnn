@@ -206,3 +206,47 @@ def draw_image(image, result_list, method, show_label=True, show_conf=True, retu
         image.show()
     else:
         return image
+
+
+def plot_classifier_train_data(x, y, feature_map_size):
+    """
+    This function plot the ROIs on to the input image, used for plot x,y in classifier date generator.
+    :param x: list, data of classifier data generator
+    :param y: list, data of classifier data generator
+    :param feature_map_size: int, the size of feature map
+    :return: None
+    """
+    image = np.squeeze(x['image'])
+    roi_list = x['roi']
+    label = y['classification_1']
+    regression_data = y['regression_1']
+
+    def de_process_image(img_array):
+        mean = [103.939, 116.779, 123.68]
+        img_array[..., 0] += mean[0]
+        img_array[..., 1] += mean[1]
+        img_array[..., 2] += mean[2]
+        img_array = img_array[..., ::-1]
+        return np.array(img_array, dtype=np.uint8)
+
+    image = de_process_image(image)
+    plt.figure()
+    plt.imshow(image)
+    input_shape = image.shape[0:2]
+    ratio_x = input_shape[0] / feature_map_size
+    ratio_y = input_shape[1] / feature_map_size
+    for i in range(0,len(roi_list)):
+        for item in range(0, len(roi_list[i])):
+            p = roi_list[i,item]
+            l = np.argmax(label[i,item])
+            if l == 10:
+                continue
+            x, y, w, h = round(p[0] * ratio_x), round(p[1] * ratio_y), round(p[2] * ratio_x), round(p[3] * ratio_y)
+            plt.gca().add_patch(
+                plt.Rectangle((x, y), w, h, fill=False,
+                              edgecolor='r', linewidth=1)
+            )
+
+            plt.text(p[0] * ratio_x + 2, p[1] * ratio_y + 2, "{}".format(int(l)))
+    plt.show()
+    plt.close()
