@@ -45,9 +45,11 @@ def zoom_image(image, input_dim):
     return new_img
 
 
-def draw_image_by_plt(image, input_dim, result_list, method, show_label=True, show_conf=True, print_result=True):
+def draw_image_by_plt(image, input_dim, result_list, method, show_label=True, show_conf=True, print_result=True,
+                      is_rpn=False):
     """
     Draw the image with matplotlab.pyplot and show it.
+    :param is_rpn: whether this image is for rpn showing.
     :param input_dim: int, the input dimension
     :param print_result: bool, whether to print the identification result to console
     :param image: PIL.Image object
@@ -96,17 +98,23 @@ def draw_image_by_plt(image, input_dim, result_list, method, show_label=True, sh
             if show_conf:
                 plt.text(x_min + 2, y_min + 2, "{:.2f}%".format(conf * 100))
         if print_result:
-            print("class:{}\tlocation:{},{},{},{}\tconf:{:.2f}%".format(int(index), int(x_min), int(y_min), int(x_max),
-                                                                        int(y_max), conf * 100))
+            if is_rpn:
+                print("location:{},{},{},{}\tconf:{:.2f}%".format(int(index), int(x_min), int(y_min), int(x_max),
+                                                                  int(y_max), conf * 100))
+            else:
+                print("class:{}\tlocation:{},{},{},{}\tconf:{:.2f}%".format(int(index), int(x_min), int(y_min),
+                                                                            int(x_max),
+                                                                            int(y_max), conf * 100))
     print("identification result end.")
     plt.show()
     plt.close()
 
 
 def draw_image_by_pillow(image, input_dim, result_list, method, show_label=True, show_conf=True, return_image=False,
-                         print_result=True):
+                         print_result=True, is_rpn=False):
     """
     Draw the image and show it.
+    :param is_rpn: whether this image is for rpn showing.
     :param input_dim: int, the input dimension
     :param print_result: bool, whether to print the identification result to console
     :param image: PIL.Image object
@@ -155,8 +163,13 @@ def draw_image_by_pillow(image, input_dim, result_list, method, show_label=True,
                 draw.text((x_min + 2, y_min + 2), "{:.2f}%".format(conf * 100), font=font,
                           fill=(r, g, b))
         if print_result:
-            print("class:{}\tlocation:{},{},{},{}\tconf:{:.2f}%".format(int(index), int(x_min), int(y_min), int(x_max),
-                                                                        int(y_max), conf * 100))
+            if is_rpn:
+                print("location:{},{},{},{}\tconf:{:.2f}%".format(int(index), int(x_min), int(y_min), int(x_max),
+                                                                  int(y_max), conf * 100))
+            else:
+                print("class:{}\tlocation:{},{},{},{}\tconf:{:.2f}%".format(int(index), int(x_min), int(y_min),
+                                                                            int(x_max),
+                                                                            int(y_max), conf * 100))
     print("identification result end.")
     if not return_image:
         image.show()
