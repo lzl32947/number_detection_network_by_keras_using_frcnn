@@ -3,47 +3,52 @@ import random
 
 from PIL.ImageDraw import Draw
 import matplotlib.pyplot as plt
-from config.Configs import Config, PMethod
+from config.Configs import Config, ImageProcessMethod
 from PIL import Image, ImageFont
 import numpy as np
 
+from util.output_util import process_output_image
 
-def resize_image(image):
+
+def resize_image(image, input_dim):
     """
     Return the resized image.
+    :param input_dim: int, the input dimension
     :param image: PIL.Image object
     :return: the resized new image
     """
-    new_img = image.resize((Config.input_dim, Config.input_dim), Image.ANTIALIAS)
+    new_img = image.resize((input_dim, input_dim), Image.ANTIALIAS)
     return new_img
 
 
-def zoom_image(image):
+def zoom_image(image, input_dim):
     """
     Scaled the image to the center.
+    :param input_dim: int, the input dimension
     :param image: PIL Image object
     :return: the scaled image
     """
     img_shape = np.array(np.shape(image)[0:2])
     width = img_shape[1]
     height = img_shape[0]
-    width_zoom_ratio = Config.input_dim / width
-    height_zoom_ratio = Config.input_dim / height
+    width_zoom_ratio = input_dim / width
+    height_zoom_ratio = input_dim / height
     zoom_ratio = min(width_zoom_ratio, height_zoom_ratio)
     new_width = int(zoom_ratio * width)
     new_height = int(zoom_ratio * height)
     img_t = image.resize((new_width, new_height), Image.BICUBIC)
-    new_img = Image.new('RGB', (Config.input_dim, Config.input_dim), (128, 128, 128))
+    new_img = Image.new('RGB', (input_dim, input_dim), (128, 128, 128))
 
-    width_offset = (Config.input_dim - new_width) // 2
-    height_offset = (Config.input_dim - new_height) // 2
+    width_offset = (input_dim - new_width) // 2
+    height_offset = (input_dim - new_height) // 2
     new_img.paste(img_t, (width_offset, height_offset))
     return new_img
 
 
-def draw_image_by_plt(image, result_list, method, show_label=True, show_conf=True, print_result=True):
+def draw_image_by_plt(image, input_dim, result_list, method, show_label=True, show_conf=True, print_result=True):
     """
     Draw the image with matplotlab.pyplot and show it.
+    :param input_dim: int, the input dimension
     :param print_result: bool, whether to print the identification result to console
     :param image: PIL.Image object
     :param result_list: list, the list of the result, in format of (box, conf, index)
@@ -56,52 +61,27 @@ def draw_image_by_plt(image, result_list, method, show_label=True, show_conf=Tru
     plt.imshow(np.array(image, dtype=np.uint8))
 
     shape = np.array(image).shape
-    width_zoom_ratio = Config.input_dim / shape[1]
-    height_zoom_ratio = Config.input_dim / shape[0]
+    width_zoom_ratio = input_dim / shape[1]
+    height_zoom_ratio = input_dim / shape[0]
     zoom_ratio = min(width_zoom_ratio, height_zoom_ratio)
     new_width = int(zoom_ratio * shape[1])
     new_height = int(zoom_ratio * shape[0])
 
-    width_offset = (Config.input_dim - new_width) // 2
-    height_offset = (Config.input_dim - new_height) // 2
-    width_offset /= Config.input_dim
-    height_offset /= Config.input_dim
+    width_offset = (input_dim - new_width) // 2
+    height_offset = (input_dim - new_height) // 2
+    width_offset /= input_dim
+    height_offset /= input_dim
+
     print("identification result:")
     for box, conf, index in result_list:
-        if method == PMethod.Reshape:
-            x_min = shape[1] * box[0]
-            y_min = shape[0] * box[1]
-            x_max = shape[1] * box[2]
-            y_max = shape[0] * box[3]
-        elif method == PMethod.Zoom:
-            x_min = Config.input_dim * box[0]
-            y_min = Config.input_dim * box[1]
-            x_max = Config.input_dim * box[2]
-            y_max = Config.input_dim * box[3]
-            if width_offset > 0:
-                if x_min < Config.input_dim * 0.5:
-                    x_min = Config.input_dim * 0.5 - ((Config.input_dim * 0.5 - x_min) * shape[0] / shape[1])
-                else:
-                    x_min = Config.input_dim * 0.5 + (x_min - Config.input_dim * 0.5) * shape[0] / shape[1]
-                if x_max < Config.input_dim * 0.5:
-                    x_max = Config.input_dim * 0.5 - ((Config.input_dim * 0.5 - x_max) * shape[0] / shape[1])
-                else:
-                    x_max = Config.input_dim * 0.5 + (x_max - Config.input_dim * 0.5) * shape[0] / shape[1]
-            if height_offset > 0:
-                if y_min < Config.input_dim * 0.5:
-                    y_min = Config.input_dim * 0.5 - ((Config.input_dim * 0.5 - y_min) * shape[1] / shape[0])
-                else:
-                    y_min = Config.input_dim * 0.5 + (y_min - Config.input_dim * 0.5) * shape[1] / shape[0]
-                if y_max < Config.input_dim * 0.5:
-                    y_max = Config.input_dim * 0.5 - ((Config.input_dim * 0.5 - y_max) * shape[1] / shape[0])
-                else:
-                    y_max = Config.input_dim * 0.5 + (y_max - Config.input_dim * 0.5) * shape[1] / shape[0]
-            x_min = x_min / Config.input_dim * shape[1]
-            x_max = x_max / Config.input_dim * shape[1]
-            y_min = y_min / Config.input_dim * shape[0]
-            y_max = y_max / Config.input_dim * shape[0]
-        else:
-            raise RuntimeError("No Method Selected.")
+        x_min, y_min, x_max, y_max = process_output_image(
+            method=method,
+            input_dim=input_dim,
+            original_shape=shape,
+            original_box=box,
+            width_offset=width_offset,
+            height_offset=height_offset
+        )
         r, g, b = random.random(), random.random(), random.random()
         plt.gca().add_patch(
             plt.Rectangle((x_min, y_min), x_max - x_min,
@@ -123,9 +103,11 @@ def draw_image_by_plt(image, result_list, method, show_label=True, show_conf=Tru
     plt.close()
 
 
-def draw_image(image, result_list, method, show_label=True, show_conf=True, return_image=False, print_result=True):
+def draw_image_by_pillow(image, input_dim, result_list, method, show_label=True, show_conf=True, return_image=False,
+                         print_result=True):
     """
     Draw the image and show it.
+    :param input_dim: int, the input dimension
     :param print_result: bool, whether to print the identification result to console
     :param image: PIL.Image object
     :param result_list: list, the list of the result, in format of (box, conf, index)
@@ -141,52 +123,26 @@ def draw_image(image, result_list, method, show_label=True, show_conf=True, retu
     font = ImageFont.truetype(os.path.join(Config.font_dir, "simhei.ttf"), font_size)
 
     draw = Draw(image)
-    width_zoom_ratio = Config.input_dim / shape[1]
-    height_zoom_ratio = Config.input_dim / shape[0]
+    width_zoom_ratio = input_dim / shape[1]
+    height_zoom_ratio = input_dim / shape[0]
     zoom_ratio = min(width_zoom_ratio, height_zoom_ratio)
     new_width = int(zoom_ratio * shape[1])
     new_height = int(zoom_ratio * shape[0])
 
-    width_offset = (Config.input_dim - new_width) // 2
-    height_offset = (Config.input_dim - new_height) // 2
-    width_offset /= Config.input_dim
-    height_offset /= Config.input_dim
+    width_offset = (input_dim - new_width) // 2
+    height_offset = (input_dim - new_height) // 2
+    width_offset /= input_dim
+    height_offset /= input_dim
     print("identification result:")
     for box, conf, index in result_list:
-        if method == PMethod.Reshape:
-            x_min = shape[1] * box[0]
-            y_min = shape[0] * box[1]
-            x_max = shape[1] * box[2]
-            y_max = shape[0] * box[3]
-        elif method == PMethod.Zoom:
-            x_min = Config.input_dim * box[0]
-            y_min = Config.input_dim * box[1]
-            x_max = Config.input_dim * box[2]
-            y_max = Config.input_dim * box[3]
-            if width_offset > 0:
-                if x_min < Config.input_dim * 0.5:
-                    x_min = Config.input_dim * 0.5 - ((Config.input_dim * 0.5 - x_min) * shape[0] / shape[1])
-                else:
-                    x_min = Config.input_dim * 0.5 + (x_min - Config.input_dim * 0.5) * shape[0] / shape[1]
-                if x_max < Config.input_dim * 0.5:
-                    x_max = Config.input_dim * 0.5 - ((Config.input_dim * 0.5 - x_max) * shape[0] / shape[1])
-                else:
-                    x_max = Config.input_dim * 0.5 + (x_max - Config.input_dim * 0.5) * shape[0] / shape[1]
-            if height_offset > 0:
-                if y_min < Config.input_dim * 0.5:
-                    y_min = Config.input_dim * 0.5 - ((Config.input_dim * 0.5 - y_min) * shape[1] / shape[0])
-                else:
-                    y_min = Config.input_dim * 0.5 + (y_min - Config.input_dim * 0.5) * shape[1] / shape[0]
-                if y_max < Config.input_dim * 0.5:
-                    y_max = Config.input_dim * 0.5 - ((Config.input_dim * 0.5 - y_max) * shape[1] / shape[0])
-                else:
-                    y_max = Config.input_dim * 0.5 + (y_max - Config.input_dim * 0.5) * shape[1] / shape[0]
-            x_min = x_min / Config.input_dim * shape[1]
-            x_max = x_max / Config.input_dim * shape[1]
-            y_min = y_min / Config.input_dim * shape[0]
-            y_max = y_max / Config.input_dim * shape[0]
-        else:
-            raise RuntimeError("No Method Selected.")
+        x_min, y_min, x_max, y_max = process_output_image(
+            method=method,
+            input_dim=input_dim,
+            original_shape=shape,
+            original_box=box,
+            width_offset=width_offset,
+            height_offset=height_offset
+        )
         r, g, b = random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)
         draw.rectangle((x_min, y_min, x_max, y_max), outline=(r, g, b))
         if show_conf and show_label:
@@ -235,11 +191,11 @@ def plot_classifier_train_data(x, y, feature_map_size):
     input_shape = image.shape[0:2]
     ratio_x = input_shape[0] / feature_map_size
     ratio_y = input_shape[1] / feature_map_size
-    for i in range(0,len(roi_list)):
+    for i in range(0, len(roi_list)):
         for item in range(0, len(roi_list[i])):
-            p = roi_list[i,item]
-            l = np.argmax(label[i,item])
-            if l == 10:
+            p = roi_list[i, item]
+            label_index = np.argmax(label[i, item])
+            if label_index == len(Config.class_names):
                 continue
             x, y, w, h = round(p[0] * ratio_x), round(p[1] * ratio_y), round(p[2] * ratio_x), round(p[3] * ratio_y)
             plt.gca().add_patch(
@@ -247,6 +203,6 @@ def plot_classifier_train_data(x, y, feature_map_size):
                               edgecolor='r', linewidth=1)
             )
 
-            plt.text(p[0] * ratio_x + 2, p[1] * ratio_y + 2, "{}".format(int(l)))
+            plt.text(p[0] * ratio_x + 2, p[1] * ratio_y + 2, "{}".format(int(label_index)))
     plt.show()
     plt.close()
