@@ -1,7 +1,6 @@
 import os
 import random
-import tensorflow as tf
-from config.Configs import Config, PMethod, PModel
+from config.Configs import Config, ImageProcessMethod, ModelConfig
 import numpy as np
 import keras.backend as K
 import matplotlib.pyplot as plt
@@ -27,31 +26,6 @@ def calculate_iou(pos, anchors):
             pri[:, 2] - pri[:, 0])
     iou = inter_area / (full_area - inter_area)
     return iou
-
-
-def pos2label(loc, cls, anc):
-    """
-    Encode the position to the label
-    :param loc: numpy array, the position of the box
-    :param cls: int, the class of the box
-    :param anc: numpy array, the anchor
-    :return: the encoded position
-    """
-    encoded_box = np.zeros((5,))
-    box_center = 0.5 * (loc[:2] + loc[2:])
-    box_wh = loc[2:] - loc[:2]
-
-    assigned_priors_center = 0.5 * (anc[:2] +
-                                    anc[2:4])
-    assigned_priors_wh = (anc[2:4] -
-                          anc[:2])
-
-    encoded_box[:2] = box_center - assigned_priors_center
-    encoded_box[:2] /= assigned_priors_wh
-    encoded_box[:2] *= 4
-    encoded_box[2:4] = np.log(box_wh / assigned_priors_wh)
-    encoded_box[2:4] *= 4
-    return encoded_box
 
 
 def encode_box(box, anchor, variance):
@@ -90,10 +64,10 @@ def pos2area(input_pos, input_dim, rpn_stride):
     :param rpn_stride: int, the proportion of the input dimension and the feature map
     :return: numpy array, with format of (x_min, y_min, w, h)
     """
-    input_pos[:, 0] = np.array(np.round(input_pos[:, 0] * input_dim / rpn_stride), dtype=np.int32)
-    input_pos[:, 1] = np.array(np.round(input_pos[:, 1] * input_dim / rpn_stride), dtype=np.int32)
-    input_pos[:, 2] = np.array(np.round(input_pos[:, 2] * input_dim / rpn_stride), dtype=np.int32)
-    input_pos[:, 3] = np.array(np.round(input_pos[:, 3] * input_dim / rpn_stride), dtype=np.int32)
+    input_pos[:, 0] = np.array(np.floor(input_pos[:, 0] * input_dim / rpn_stride), dtype=np.int32)
+    input_pos[:, 1] = np.array(np.floor(input_pos[:, 1] * input_dim / rpn_stride), dtype=np.int32)
+    input_pos[:, 2] = np.array(np.ceil(input_pos[:, 2] * input_dim / rpn_stride), dtype=np.int32)
+    input_pos[:, 3] = np.array(np.ceil(input_pos[:, 3] * input_dim / rpn_stride), dtype=np.int32)
     input_pos[:, 2] -= input_pos[:, 0]
     input_pos[:, 3] -= input_pos[:, 1]
     return input_pos
@@ -147,32 +121,31 @@ def shift(shape, anchors, rpn_strides):
     return shifted_anchors
 
 
-def anchor_for_model(model_class):
+def anchor_for_model(model_name):
     """
     Return the anchor of different models.
-    :param model_class: PModel class
+    :param model_name: ModelConfig class
     :return: numpy array, the anchor
     """
-    if model_class == PModel.ResNet50:
-        Config.rpn_stride = 16
-        anchors = get_anchors(
-            (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
-            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
-    elif model_class == PModel.ResNet101:
-        Config.rpn_stride = 16
-        anchors = get_anchors(
-            (np.ceil(Config.input_dim / Config.rpn_stride), np.ceil(Config.input_dim / Config.rpn_stride)),
-            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
-    elif model_class == PModel.VGG16:
-        Config.rpn_stride = 16
-        anchors = get_anchors(
-            (np.floor(Config.input_dim / Config.rpn_stride), np.floor(Config.input_dim / Config.rpn_stride)),
-            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
-    elif model_class == PModel.MobileNetV2:
-        Config.rpn_stride = 32
-        anchors = get_anchors(
-            (np.floor(Config.input_dim / Config.rpn_stride), np.floor(Config.input_dim / Config.rpn_stride)),
-            (Config.input_dim, Config.input_dim), Config.anchor_box_scales, Config.anchor_box_ratios, Config.rpn_stride)
+    models = model_name.value
+    if model_name == ModelConfig.ResNet50:
+        anchors = get_anchors(feature_map_shape=(models.feature_map_size, models.feature_map_size),
+                              input_shape=(models.input_dim, models.input_dim),
+                              anchor_sizes=models.anchor_box_scales,
+                              anchor_ratios=models.anchor_box_ratios,
+                              rpn_strides=models.rpn_stride)
+    elif model_name == ModelConfig.VGG16_standard:
+        anchors = get_anchors(feature_map_shape=(models.feature_map_size, models.feature_map_size),
+                              input_shape=(models.input_dim, models.input_dim),
+                              anchor_sizes=models.anchor_box_scales,
+                              anchor_ratios=models.anchor_box_ratios,
+                              rpn_strides=models.rpn_stride)
+    elif model_name == ModelConfig.VGG16:
+        anchors = get_anchors(feature_map_shape=(models.feature_map_size, models.feature_map_size),
+                              input_shape=(models.input_dim, models.input_dim),
+                              anchor_sizes=models.anchor_box_scales,
+                              anchor_ratios=models.anchor_box_ratios,
+                              rpn_strides=models.rpn_stride)
     else:
         raise RuntimeError("No model selected.")
     return anchors
@@ -214,18 +187,19 @@ def process_pixel(img_array):
     return img_array
 
 
-def process_input_image(image, method=PMethod.Zoom):
+def process_input_image(image, input_dim, method):
     """
     Process the input image.
+    :param input_dim: int, the input dimension
     :param image: PIL.Image object
     :param method: PMethod class
     :return: numpy array of the processed image
     """
     shape = np.array(image).shape
-    if method == PMethod.Zoom:
-        new_image = zoom_image(image)
-    elif method == PMethod.Reshape:
-        new_image = resize_image(image)
+    if method == ImageProcessMethod.Zoom:
+        new_image = zoom_image(image, input_dim)
+    elif method == ImageProcessMethod.Reshape:
+        new_image = resize_image(image, input_dim)
     else:
         raise RuntimeError("No Method Selected.")
 
@@ -234,15 +208,16 @@ def process_input_image(image, method=PMethod.Zoom):
     return input_array, shape
 
 
-def image_show(image, li):
+def image_show(image, input_dim, li):
     """
     Show the rectangle of the object, use for test.
+    :param input_dim: int, the input dimension
     :param image: PIL.Image object
     :param li: list or numpy array, must have shape (?,4) or (?,5)
     :return: None
     """
     plt.figure()
-    plt.imshow(image.reshape(Config.input_dim, Config.input_dim, 3))
+    plt.imshow(image.reshape(input_dim, input_dim, 3))
     for p in li:
         plt.gca().add_patch(
             plt.Rectangle((p[0], p[1]), p[2] - p[0],
@@ -253,154 +228,184 @@ def image_show(image, li):
     plt.close()
 
 
-def transform_box(box, original_shape, method):
+def transform_box(box, input_dim, original_shape, method):
     """
     Change the coordinate from the original annotation.
+    :param input_dim: int, the input dimension
     :param box: numpy array, with shape (?,5)
     :param original_shape: tuple, indicates the (x_min,y_min,x_max,y_max) of the annotation
     :param method: PMethod class
     :return: the encoded boxes, with format (x_min,y_min,x_max,y_max)
     """
     h, w, c = original_shape
-    if method == PMethod.Reshape:
+    if method == ImageProcessMethod.Reshape:
         box = box.astype(np.float)
-        box[:, 1:4:2] = box[:, 1:4:2] / h * Config.input_dim
-        box[:, 0:4:2] = box[:, 0:4:2] / w * Config.input_dim
+        box[:, 1:4:2] = box[:, 1:4:2] / h * input_dim
+        box[:, 0:4:2] = box[:, 0:4:2] / w * input_dim
         box = box.astype(np.int)
-    elif method == PMethod.Zoom:
-        rh = Config.input_dim / h
-        rw = Config.input_dim / w
+    elif method == ImageProcessMethod.Zoom:
+        rh = input_dim / h
+        rw = input_dim / w
         ranges = min(rw, rh)
-        x_min_b = np.where(box[:, 0] >= 0.5 * Config.input_dim)
-        x_min_l = np.where(box[:, 0] < 0.5 * Config.input_dim)
-        x_max_b = np.where(box[:, 2] >= 0.5 * Config.input_dim)
-        x_max_l = np.where(box[:, 2] < 0.5 * Config.input_dim)
-        y_min_b = np.where(box[:, 1] >= 0.5 * Config.input_dim)
-        y_min_l = np.where(box[:, 1] < 0.5 * Config.input_dim)
-        y_max_b = np.where(box[:, 3] >= 0.5 * Config.input_dim)
-        y_max_l = np.where(box[:, 3] < 0.5 * Config.input_dim)
-        box[x_min_b, 0] = (Config.input_dim * 0.5 + (box[x_min_b, 0] - w * 0.5) * ranges).astype(np.int)
-        box[x_min_l, 0] = (Config.input_dim * 0.5 - (w * 0.5 - box[x_min_l, 0]) * ranges).astype(np.int)
-        box[x_max_b, 2] = (Config.input_dim * 0.5 + (box[x_max_b, 2] - w * 0.5) * ranges).astype(np.int)
-        box[x_max_l, 2] = (Config.input_dim * 0.5 - (w * 0.5 - box[x_max_l, 2]) * ranges).astype(np.int)
-        box[y_min_b, 1] = (Config.input_dim * 0.5 + (box[y_min_b, 1] - h * 0.5) * ranges).astype(np.int)
-        box[y_min_l, 1] = (Config.input_dim * 0.5 - (h * 0.5 - box[y_min_l, 1]) * ranges).astype(np.int)
-        box[y_max_b, 3] = (Config.input_dim * 0.5 + (box[y_max_b, 3] - h * 0.5) * ranges).astype(np.int)
-        box[y_max_l, 3] = (Config.input_dim * 0.5 - (h * 0.5 - box[y_max_l, 3]) * ranges).astype(np.int)
+        x_min_b = np.where(box[:, 0] >= 0.5 * input_dim)
+        x_min_l = np.where(box[:, 0] < 0.5 * input_dim)
+        x_max_b = np.where(box[:, 2] >= 0.5 * input_dim)
+        x_max_l = np.where(box[:, 2] < 0.5 * input_dim)
+        y_min_b = np.where(box[:, 1] >= 0.5 * input_dim)
+        y_min_l = np.where(box[:, 1] < 0.5 * input_dim)
+        y_max_b = np.where(box[:, 3] >= 0.5 * input_dim)
+        y_max_l = np.where(box[:, 3] < 0.5 * input_dim)
+        box[x_min_b, 0] = (input_dim * 0.5 + (box[x_min_b, 0] - w * 0.5) * ranges).astype(np.int)
+        box[x_min_l, 0] = (input_dim * 0.5 - (w * 0.5 - box[x_min_l, 0]) * ranges).astype(np.int)
+        box[x_max_b, 2] = (input_dim * 0.5 + (box[x_max_b, 2] - w * 0.5) * ranges).astype(np.int)
+        box[x_max_l, 2] = (input_dim * 0.5 - (w * 0.5 - box[x_max_l, 2]) * ranges).astype(np.int)
+        box[y_min_b, 1] = (input_dim * 0.5 + (box[y_min_b, 1] - h * 0.5) * ranges).astype(np.int)
+        box[y_min_l, 1] = (input_dim * 0.5 - (h * 0.5 - box[y_min_l, 1]) * ranges).astype(np.int)
+        box[y_max_b, 3] = (input_dim * 0.5 + (box[y_max_b, 3] - h * 0.5) * ranges).astype(np.int)
+        box[y_max_l, 3] = (input_dim * 0.5 - (h * 0.5 - box[y_max_l, 3]) * ranges).astype(np.int)
     else:
         raise RuntimeError("No Method Selected.")
     return box
 
 
-def generate_random_position(input_dim, rpn_stride):
+def generate_random_position(feature_map_size):
     """
     Generate the random position for the pasted image.
-    :param input_dim: int, the dimension of the input image
-    :param rpn_stride: int, the proportion of the input dimension and the feature map
+    :param feature_map_size: int, the size of the feature map
     :return: the position
     """
-    x = random.randint(0, np.floor(input_dim / rpn_stride) - 1)
-    y = random.randint(0, np.floor(input_dim / rpn_stride) - 1)
-    x_ = random.randint(x + 1, np.floor(input_dim / rpn_stride))
-    y_ = random.randint(y + 1, np.floor(input_dim / rpn_stride))
+    x = random.randint(0, feature_map_size - 1)
+    y = random.randint(0, feature_map_size - 1)
+    x_ = random.randint(x + 1, feature_map_size)
+    y_ = random.randint(y + 1, feature_map_size)
     return [x, y, x_, y_]
 
 
-def encode_label_for_rpn(pos, anchor):
+def encode_label_for_rpn(pos, model_name, anchor):
     """
     This function generate the label Y for training of a single input image for the RPN model.
+    :param model_name: ModelConfig object
     :param pos: numpy array, the position of boxes
     :param anchor: numpy array
     :return: Y1: the confidence of the box to be ROI
     Y2: the encoded array of the boxes
     """
-    loc = pos[:, :4].astype(np.float64) / Config.input_dim
+    models = model_name.value
+    loc = pos[:, :4].astype(np.float64) / models.input_dim
+    # results:
+    # 0,1,2,3 -> xmin, ymin, xmax, ymax
+    # 4 -> label
+    # 5 -> iou
     results = np.zeros(shape=(len(anchor), 6))
-    results[:, 0] = -1
+    # TODO: Check whether the change results[:,0] to results[:,4] is right
+    results[:, 4] = -1
     negative_set = np.array([i for i in range(0, len(anchor))])
     for i in range(0, len(loc)):
+        # the IoU of i-th location to the anchor
         iou = calculate_iou(loc[i], anchor)
 
-        positive_index = iou > Config.rpn_max_overlap
+        positive_index = iou > models.rpn_max_overlap
         k = np.argwhere(positive_index is True).tolist()
         if len(k) == 0:
             max_index = np.argmax(iou)
             k.append(max_index)
 
         for j in k:
-            box = encode_box(loc[i], anchor[j], variance=Config.rpn_variance)
+            box = encode_box(loc[i], anchor[j], variance=models.rpn_variance)
             if results[j, 5] < iou[j]:
                 results[j, 0:4] = box
                 results[j, 4] = 1
                 results[j, 5] = iou[j]
 
-        negative_index = np.where(iou < Config.rpn_min_overlap)
+        negative_index = np.where(iou < models.rpn_min_overlap)
         negative_set = np.intersect1d(negative_set, negative_index)
     results[negative_set, 4] = 0
     return np.expand_dims(results[:, 4], -1), results[:, 0:5]
 
 
-def encode_label_for_classifier(image_boxes):
+# TODO: Add function hint.
+def encode_label_for_classifier(image_boxes, model_name):
     """
     This function generate the label Y for training of a single input image for the classifier model.
-    :param pos: numpy array, the position of boxes
-    :param anchor: numpy array
+    :param model_name:
+    :param image_boxes:
     :return: Y1: the confidence of the box to be ROI
     Y2: the encoded array of the boxes
     """
+    models = model_name.value
     box_list = []
     gt_list = []
     label_list = []
     for i in image_boxes:
-        x_min = int(round(i[0] / Config.rpn_stride))
-        y_min = int(round(i[1] / Config.rpn_stride))
-        x_max = int(round(i[2] / Config.rpn_stride))
-        y_max = int(round(i[3] / Config.rpn_stride))
+        # position for ROI:
+
+        x_min = np.floor(i[0] / models.input_dim * models.feature_map_size)
+        y_min = np.floor(i[1] / models.input_dim * models.feature_map_size)
+        x_max = np.ceil(i[2] / models.input_dim * models.feature_map_size)
+        y_max = np.ceil(i[3] / models.input_dim * models.feature_map_size)
+
+        # box_list in format int  (0, feature map size)
         box_list.append([x_min, y_min, x_max, y_max])
-        gt_list.append([i[0] / Config.input_dim,
-                        i[1] / Config.input_dim,
-                        i[2] / Config.input_dim,
-                        i[3] / Config.input_dim])
+
+        # gt_list in format float
+        gt_list.append([i[0] / models.input_dim,
+                        i[1] / models.input_dim,
+                        i[2] / models.input_dim,
+                        i[3] / models.input_dim])
         label_list.append(i[4])
-    if len(box_list) % Config.classifier_train_batch != 0:
-        t = len(box_list) // Config.classifier_train_batch
-        batch = (t + 1) * Config.classifier_train_batch
+    if len(box_list) > models.classifier_train_batch:
+        box_list = box_list[:models.classifier_train_batch]
+        gt_list = gt_list[:models.classifier_train_batch]
+        label_list = label_list[:models.classifier_train_batch]
+    else:
+        batch = models.classifier_train_batch
         j = 0
         gt_box = np.array(box_list, dtype=np.int)
         while j < batch - len(gt_box):
-            position = generate_random_position(Config.input_dim, Config.rpn_stride)
-            iou_list = calculate_iou(np.array(position, dtype=np.int), gt_box)
+            position = generate_random_position(models.feature_map_size)
+            iou_list = calculate_iou(np.array(position) / models.feature_map_size, gt_box)
             if np.max(iou_list) > 0.3:
                 continue
             else:
                 box_list.append(position)
                 label_list.append(0)
                 j += 1
-
+    # X2 in format int (0, feature map size)
     X2 = np.array(box_list)
+    box_list = X2.copy()
+    box_list = np.array(box_list).astype(np.float)
+    # gt_list in format float (0, 1)
+    gt_list = np.array(gt_list).astype(np.float)
+
+    box_list[:, 0] = box_list[:, 0] / models.feature_map_size
+    box_list[:, 1] = box_list[:, 1] / models.feature_map_size
+    box_list[:, 2] = box_list[:, 2] / models.feature_map_size
+    box_list[:, 3] = box_list[:, 3] / models.feature_map_size
+
+    # box_list in format float (0, 1)
+
     X2[:, 2] = X2[:, 2] - X2[:, 0]
     X2[:, 3] = X2[:, 3] - X2[:, 1]
-    box_list = np.array(box_list).astype(np.float)
-    gt_list = np.array(gt_list).astype(np.float)
-    box_list[:, 0] /= np.ceil(Config.input_dim / Config.rpn_stride)
-    box_list[:, 1] /= np.ceil(Config.input_dim / Config.rpn_stride)
-    box_list[:, 2] /= np.ceil(Config.input_dim / Config.rpn_stride)
-    box_list[:, 3] /= np.ceil(Config.input_dim / Config.rpn_stride)
-    Y1 = np.zeros(shape=(len(box_list), 1 + len(Config.class_names)), dtype=np.int)
-    Y2 = np.zeros(shape=(len(box_list), 8 * len(Config.class_names)))
+
+    Y1 = np.zeros(shape=(len(box_list), 1 + len(models.class_names)), dtype=np.int)
+    Y2 = np.zeros(shape=(len(box_list), 8 * len(models.class_names)))
 
     results = np.zeros(shape=(len(box_list), 6))
+    # results:
+    # 0,1,2,3 -> xmin, ymin, xmax, ymax
+    # 4 -> label
+    # 5 -> iou
     for i in range(0, len(box_list)):
         iou = calculate_iou(box_list[i], gt_list)
 
-        positive_index = iou > Config.rpn_max_overlap
+        positive_index = iou > models.rpn_max_overlap
         k = np.argwhere(positive_index > 0).tolist()
         if len(k) == 0:
             max_index = np.argmax(iou)
             k.append(max_index)
 
         for j in k:
-            box = encode_box(np.squeeze(box_list[i]), np.squeeze(gt_list[j]), Config.classifier_variance)
+            box = encode_box(np.squeeze(gt_list[j]), np.squeeze(box_list[i]), models.classifier_variance)
             if results[j, 5] < iou[j]:
                 results[j, 0:4] = box
                 results[j, 4] = 1
@@ -412,23 +417,25 @@ def encode_label_for_classifier(image_boxes):
     for i in range(0, len(box_list)):
         if results[i, 4] == 1:
             Y2[i, 4 * label_list[i]:4 * (label_list[i] + 1)] = [1, 1, 1, 1]
-            Y2[i, 4 * len(Config.class_names) + 4 * label_list[i]:4 * len(Config.class_names) + 4 * (
+            Y2[i, 4 * len(models.class_names) + 4 * label_list[i]:4 * len(models.class_names) + 4 * (
                     label_list[i] + 1)] = results[i, 0:4]
 
-    X2 = np.reshape(X2, (-1, Config.classifier_train_batch, 4))
-    Y1 = np.reshape(Y1, (-1, Config.classifier_train_batch, len(Config.class_names) + 1))
-    Y2 = np.reshape(Y2, (-1, Config.classifier_train_batch, 8 * len(Config.class_names)))
+    X2 = np.reshape(X2, (-1, models.classifier_train_batch, 4))
+    Y1 = np.reshape(Y1, (-1, models.classifier_train_batch, len(models.class_names) + 1))
+    Y2 = np.reshape(Y2, (-1, models.classifier_train_batch, 8 * len(models.class_names)))
     return X2, Y1, Y2
 
 
-def classifier_data_generator(annotation_path, method=PMethod.Reshape, use_generator=False):
+def classifier_data_generator(annotation_path, model_name, method, use_generator=False):
     """
     The generator for training the classifier model.
+    :param model_name: ModelConfig object
     :param annotation_path: str, the path to annotation file(if not using generator)
     :param method: PMethod class, the method to process the input image
     :param use_generator: bool, if use generator, the annotation file will not be used
     :return: single training data
     """
+    models = model_name.value
     if use_generator:
         annotation_lines = []
         img_list = get_image_number_list()
@@ -440,34 +447,52 @@ def classifier_data_generator(annotation_path, method=PMethod.Reshape, use_gener
     while True:
         if use_generator:
             img, box = generate_single_image(img_list)
-            image, o_s = process_input_image(img, method)
-            u = transform_box(box, o_s, method)
-            roi, class_conf, pos = encode_label_for_classifier(u)
+            image, o_s = process_input_image(image=img,
+                                             method=method,
+                                             input_dim=models.input_dim)
+            u = transform_box(box=box,
+                              original_shape=o_s,
+                              method=method,
+                              input_dim=models.input_dim)
+            roi, class_conf, pos = encode_label_for_classifier(image_boxes=u,
+                                                               model_name=model_name)
             yield (
-                {'image': np.expand_dims(np.array(image), axis=0), 'roi': roi},
-                {'classification_1': class_conf, 'regression_1': pos})
+                {'input_1': np.expand_dims(np.array(image), axis=0), 'input_2': roi},
+                {'dense_class_{}'.format(len(Config.class_names) + 1): class_conf,
+                 'dense_regress_{}'.format(len(Config.class_names) + 1): pos})
         else:
             for term in annotation_lines:
                 line = term.split()
                 img_path = line[0]
                 img_box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]], dtype=np.int)
                 img = Image.open(img_path)
-                image, o_s = process_input_image(img, method)
-                u = transform_box(img_box, o_s, method)
-                roi, class_conf, pos = encode_label_for_classifier(u)
+                image, o_s = process_input_image(image=img,
+                                                 method=method,
+                                                 input_dim=models.input_dim)
+                u = transform_box(box=img_box,
+                                  original_shape=o_s,
+                                  method=method,
+                                  input_dim=models.input_dim)
+                roi, class_conf, pos = encode_label_for_classifier(image_boxes=u,
+                                                                   model_name=model_name)
                 yield (
-                    {'image': np.expand_dims(np.array(image), axis=0), 'roi': roi},
-                    {'classification_1': class_conf, 'regression_1': pos})
+                    {'input_1': np.expand_dims(np.array(image), axis=0), 'input_2': roi},
+                    {'dense_class_{}'.format(len(Config.class_names) + 1): class_conf,
+                     'dense_regress_{}'.format(len(Config.class_names) + 1): pos})
 
 
-def rpn_data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Reshape, use_generator=False):
+def rpn_data_generator(annotation_path, model_name, anchors, method, batch_size=4, use_generator=False):
     """
     The generator for training the RPN model.
+    :param model_name: ModelConfig object
+    :param batch_size: int, size of a batch
+    :param anchors: numpy array
     :param annotation_path: str, the path to annotation file(if not using generator)
     :param method: PMethod class, the method to process the input image
     :param use_generator: bool, if use generator, the annotation file will not be used
     :return: single training data
     """
+    models = model_name.value
     if use_generator:
         annotation_lines = []
         img_list = get_image_number_list()
@@ -483,9 +508,16 @@ def rpn_data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Re
     while True:
         if use_generator:
             image, box = generate_single_image(img_list)
-            x, o_s = process_input_image(image, method)
-            u = transform_box(box, o_s, method)
-            flag, pos = encode_label_for_rpn(u, anchors)
+            x, o_s = process_input_image(image=image,
+                                         method=method,
+                                         input_dim=models.input_dim)
+            u = transform_box(box=box,
+                              original_shape=o_s,
+                              method=method,
+                              input_dim=models.input_dim)
+            flag, pos = encode_label_for_rpn(pos=u,
+                                             anchor=anchors,
+                                             model_name=model_name)
             X.append(x)
             flag_list.append(flag)
             pos_list.append(pos)
@@ -503,9 +535,16 @@ def rpn_data_generator(annotation_path, anchors, batch_size=4, method=PMethod.Re
                 img_path = line[0]
                 img_box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]], dtype=np.int)
                 image = Image.open(img_path)
-                x, o_s = process_input_image(image, method)
-                u = transform_box(img_box, o_s, method)
-                flag, pos = encode_label_for_rpn(u, anchors)
+                x, o_s = process_input_image(image=image,
+                                             method=method,
+                                             input_dim=models.input_dim)
+                u = transform_box(box=img_box,
+                                  original_shape=o_s,
+                                  method=method,
+                                  input_dim=models.input_dim)
+                flag, pos = encode_label_for_rpn(pos=u,
+                                                 anchor=anchors,
+                                                 model_name=model_name)
                 X.append(x)
                 flag_list.append(flag)
                 pos_list.append(pos)
@@ -531,20 +570,20 @@ def get_weight_file(name):
         for d in dirs:
             dir_path = os.path.join(root, d)
             for _r, _d, f in os.walk(dir_path):
-                for weight_file in f:
-                    if weight_file == name:
-                        file_list.append(os.path.join(dir_path, weight_file))
-                    elif name + ".h5" == weight_file:
-                        file_list.append(os.path.join(dir_path, weight_file))
+                for dx in _d:
+                    _dir = os.path.join(dir_path, dx)
+                    for _root, _x, weight_files in os.walk(_dir):
+                        for weight_file in weight_files:
+                            if weight_file == name:
+                                file_list.append(os.path.join(_dir, weight_file))
+                            elif name + ".h5" == weight_file:
+                                file_list.append(os.path.join(_dir, weight_file))
     for root, dirs, files in os.walk(Config.weight_dir):
-        for d in dirs:
-            dir_path = os.path.join(root, d)
-            for _r, _d, f in os.walk(dir_path):
-                for weight_file in f:
-                    if weight_file == name:
-                        file_list.append(os.path.join(dir_path, weight_file))
-                    elif name + ".h5" == weight_file:
-                        file_list.append(os.path.join(dir_path, weight_file))
+        for weight_file in files:
+            if weight_file == name:
+                file_list.append(os.path.join(root, weight_file))
+            elif name + ".h5" == weight_file:
+                file_list.append(os.path.join(root, weight_file))
     if len(file_list) == 0:
         raise RuntimeError("No weight suitable.")
     else:
