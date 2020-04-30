@@ -1,27 +1,9 @@
-import tensorflow as tf
 import numpy as np
-import keras
-import keras.backend as K
 import random
 from PIL import Image
 import os
 
 from config.Configs import Config
-
-
-def rect_cross(x1_min, y1_min, x1_max, y1_max, x2_min, y2_min, x2_max, y2_max):
-    """
-    This function calculate whether the two rectangle cross over each other.
-    :return: the two rectangles have inner set
-    """
-    zx = abs(x1_min + x1_max - x2_min - x2_max)
-    x = abs(x1_min - x1_max) + abs(x2_min - x2_max)
-    zy = abs(y1_min + y1_max - y2_min - y2_max)
-    y = abs(y1_min - y1_max) + abs(y2_min - y2_max)
-    if zx <= x and zy <= y:
-        return 1
-    else:
-        return 0
 
 
 def get_image_number_list():
@@ -46,6 +28,21 @@ def generate_single_image(single_image_list):
     :param single_image_list: list, the file path to single image
     :return: the image array, the box
     """
+
+    def rect_cross(x1_min, y1_min, x1_max, y1_max, x2_min, y2_min, x2_max, y2_max):
+        """
+        This function calculate whether the two rectangle cross over each other.
+        :return: the two rectangles have inner set
+        """
+        zx = abs(x1_min + x1_max - x2_min - x2_max)
+        x = abs(x1_min - x1_max) + abs(x2_min - x2_max)
+        zy = abs(y1_min + y1_max - y2_min - y2_max)
+        y = abs(y1_min - y1_max) + abs(y2_min - y2_max)
+        if zx <= x and zy <= y:
+            return 1
+        else:
+            return 0
+
     while True:
         number_list = []
         image_height = random.randint(40, 60)
