@@ -1,5 +1,5 @@
+from keras.engine.topology import Layer
 import keras.backend as K
-from keras.layers import Layer
 import tensorflow as tf
 
 
