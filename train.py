@@ -4,14 +4,14 @@ from datetime import datetime
 import keras.backend as K
 from keras.backend import categorical_crossentropy
 from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
+from keras.utils import plot_model
 
-from config.Configs import Config, PMethod, PModel, PClassifier
-from models import init_session, RPN_model, Classifier_model
-import numpy as np
+from config.Configs import Config, ImageProcessMethod, ModelConfig
+from models import init_session, get_rpn_model, get_classifier_model
 import tensorflow as tf
 import keras
 
-from util.input_util import get_anchors, rpn_data_generator, classifier_data_generator, anchor_for_model, \
+from util.input_util import rpn_data_generator, classifier_data_generator, anchor_for_model, \
     get_weight_file
 
 
@@ -76,7 +76,7 @@ def smooth_l1(sigma=1.0):
 
         # 计算 smooth L1 loss
         # f(x) = 0.5 * (sigma * x)^2          if |x| < 1 / sigma / sigma
-        #        |x| - 0.5 / sigma / sigma    otherwise
+        #        |x| - 0.5 / sigma * sigma    otherwise
         regression_diff = regression - regression_target
         regression_diff = keras.backend.abs(regression_diff)
         regression_loss = tf.where(
@@ -94,49 +94,11 @@ def smooth_l1(sigma=1.0):
     return _smooth_l1
 
 
-def rpn_train(weight_file_list, model_class, use_generator=False, batch_size=2, show_image=False):
-    init_session()
-
-    rpn_model = RPN_model(weight_file=weight_file_list,
-                          show_image=show_image, model_class=model_class)
-    rpn_model.compile(loss={
-        'regression': smooth_l1(),
-        'classification': cls_loss()
-    }, optimizer=keras.optimizers.Adam(lr=1e-5), metrics=['accuracy'])
-
-    anchors = anchor_for_model(model_class)
-    time = datetime.now().strftime('%Y%m%d_%H%M%S')
-    checkpoint_dir = os.path.join(Config.checkpoint_dir, time)
-    log_dir = os.path.join(Config.tensorboard_log_dir, time)
-    os.mkdir(checkpoint_dir)
-    os.mkdir(log_dir)
-
-    logging = TensorBoard(log_dir=log_dir)
-    checkpoint = ModelCheckpoint(
-        os.path.join(checkpoint_dir,
-                     'rpn_ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}-' + str(model_class) + '.h5'),
-        monitor='val_loss', save_weights_only=True, save_best_only=True, period=1)
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, verbose=1)
-    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1)
-
-    rpn_model.fit_generator(
-        rpn_data_generator(Config.train_annotation_path, anchors, batch_size=batch_size, method=PMethod.Reshape,
-                           use_generator=use_generator),
-        steps_per_epoch=1000,
-        epochs=100,
-        validation_data=rpn_data_generator(Config.valid_annotation_path, anchors, batch_size=batch_size,
-                                           method=PMethod.Reshape, use_generator=use_generator),
-        validation_steps=100,
-        initial_epoch=0,
-        callbacks=[logging, checkpoint],
-        verbose=1)
-
-
 def class_loss_regr(num_classes):
     epsilon = 1e-4
 
     def class_loss_regr_fixed_num(y_true, y_pred):
-        x = y_true[:, :, 4 * num_classes:] - y_pred
+        x = y_true[:, :, 4 * num_classes:8 * num_classes] - y_pred
         x_abs = K.abs(x)
         x_bool = K.cast(K.less_equal(x_abs, 1.0), 'float32')
         loss = 4 * K.sum(
@@ -147,78 +109,177 @@ def class_loss_regr(num_classes):
     return class_loss_regr_fixed_num
 
 
+# def class_loss_conf(num_classes):
+#     def _softmax_loss(y_true, y_pred):
+#         y_pred = tf.maximum(tf.minimum(y_pred, 1 - 1e-15), 1e-15)
+#         softmax_loss = -tf.reduce_sum(y_true * tf.log(y_pred), axis=-1)
+#         return softmax_loss
+#     return _softmax_loss
+
 def class_loss_conf(num_classes):
     def class_loss_cls(y_true, y_pred):
-        y_true_reshape = tf.reshape(y_true, (-1, num_classes + 1))
-        y_pred_reshape = tf.reshape(y_pred, (-1, num_classes + 1))
-        return K.mean(categorical_crossentropy(y_true_reshape, y_pred_reshape))
+        return K.mean(K.categorical_crossentropy(y_true[0, :, :], y_pred[0, :, :]))
 
     return class_loss_cls
 
 
-def classifier_train(weight_file_list, model_class, classifier_class, use_generator=False, freeze_base_layer=True,
-                     show_image=False):
-    init_session()
-    classifier_model = Classifier_model(for_train=True,
-                                        weight_file=weight_file_list,
-                                        show_image=show_image, model_class=model_class,
-                                        classifier_class=classifier_class)
+def rpn_train(rpn_weight_list, model_name, method, use_generator=False, batch_size=2,
+              show_image=True, run_on_laptop=False, freeze_layers=False, use_bfc=True,
+              save_best_only=True, lr=1e-5):
+    init_session(run_on_laptop, use_bfc)
 
-    if freeze_base_layer:
-        for layer in classifier_model.layers:
-            layer.trainable = False
-        if classifier_class == PClassifier.DenseBase:
-            for k in range(-8, 0):
-                classifier_model.layers[k].trainable = True
-        elif classifier_class == PClassifier.ResNetBase:
-            for k in range(-37, 0):
-                classifier_model.layers[k].trainable = True
-        else:
-            raise RuntimeError("No classifier selected.")
-    classifier_model.summary(line_length=100)
-    classifier_model.compile(loss=[
-        class_loss_conf(len(Config.class_names)),
-        class_loss_regr(len(Config.class_names))
-    ],
-        metrics={"classification_1": 'accuracy'}, optimizer=keras.optimizers.Adam(lr=1e-5)
-    )
-    time = datetime.now().strftime('%Y%m%d_%H%M%S')
-    checkpoint_dir = os.path.join(Config.checkpoint_dir, time)
-    log_dir = os.path.join(Config.tensorboard_log_dir, time)
+    rpn_model = get_rpn_model(model_name=model_name)
+
+    if freeze_layers:
+        for i in rpn_model.layers:
+            i.trainable = False
+        for i in range(-5, -1):
+            rpn_model.layers[i].trainable = True
+        print("Trainable layers:")
+        for x in rpn_model.trainable_weights:
+            print(x.name)
+        rpn_model.summary()
+
+    if show_image:
+        plot_model(rpn_model, to_file=os.path.join(Config.model_output_dir, "{}-rpn.png".format(model_name)),
+                   show_shapes=True, show_layer_names=True)
+
+    for i in rpn_weight_list:
+        rpn_model.load_weights(i, skip_mismatch=True, by_name=True)
+    rpn_model.compile(loss={
+        'regression': smooth_l1(),
+        'classification': cls_loss()
+    }, optimizer=keras.optimizers.Adam(lr=lr), metrics=['accuracy'])
+
+    anchors = anchor_for_model(model_name)
+
+    now_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+    checkpoint_dir = os.path.join(Config.checkpoint_dir, str(model_name))
+    log_dir = os.path.join(Config.tensorboard_log_dir, str(model_name))
+    if not os.path.exists(checkpoint_dir):
+        os.mkdir(checkpoint_dir)
+    if not os.path.exists(log_dir):
+        os.mkdir(log_dir)
+    checkpoint_dir = os.path.join(checkpoint_dir, now_time)
+    log_dir = os.path.join(log_dir, now_time)
     os.mkdir(checkpoint_dir)
     os.mkdir(log_dir)
+
     logging = TensorBoard(log_dir=log_dir)
     checkpoint = ModelCheckpoint(
         os.path.join(checkpoint_dir,
-                     'classifier_ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}-' + str(model_class) + '.h5'),
-        monitor='val_loss', save_weights_only=True, save_best_only=True, period=1)
+                     'rpn_ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}-' + str(model_name) + '-rpn.h5'),
+        monitor='val_loss', save_weights_only=True, save_best_only=save_best_only, period=1)
+    # reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, verbose=1)
+    # early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1)
 
-    classifier_model.fit_generator(
-        classifier_data_generator(Config.train_annotation_path, method=PMethod.Reshape, use_generator=use_generator),
+    rpn_model.fit_generator(
+        rpn_data_generator(annotation_path=Config.train_annotation_path,
+                           model_name=model_name,
+                           anchors=anchors,
+                           batch_size=batch_size,
+                           method=method,
+                           use_generator=use_generator),
         steps_per_epoch=1000,
-        epochs=500,
-        validation_data=classifier_data_generator(Config.valid_annotation_path,
-                                                  method=PMethod.Reshape, use_generator=use_generator),
+        epochs=100,
+        validation_data=rpn_data_generator(annotation_path=Config.valid_annotation_path,
+                                           anchors=anchors,
+                                           model_name=model_name,
+                                           batch_size=batch_size,
+                                           method=method,
+                                           use_generator=use_generator),
         validation_steps=100,
         initial_epoch=0,
         callbacks=[logging, checkpoint],
         verbose=1)
 
 
+def classifier_train(classifier_weight_list, model_name, method, use_generator=False,
+                     freeze_base_layer=True, start_epoch=0,
+                     show_image=False, run_on_laptop=False, use_bfc=False, lr=5e-4):
+    init_session(run_on_laptop, use_bfc)
+    models = model_name.value
+    classifier_model = get_classifier_model(model_name=model_name)
+
+    for i in classifier_weight_list:
+        classifier_model.load_weights(i, skip_mismatch=True, by_name=True)
+
+    if freeze_base_layer:
+        for i in classifier_model.layers:
+            i.trainable = False
+        for i in range(-models.freeze_layers, -1):
+            classifier_model.layers[i].trainable = True
+        print("Trainable layers:")
+        for x in classifier_model.trainable_weights:
+            print(x.name)
+        classifier_model.summary(line_length=100)
+
+    if show_image:
+        plot_model(classifier_model, to_file=os.path.join(Config.model_output_dir, "{}-rpn.png".format(model_name)),
+                   show_shapes=True, show_layer_names=True)
+
+    classifier_model.compile(loss={
+        'dense_class_{}'.format(len(Config.class_names) + 1): class_loss_conf(len(Config.class_names)),
+        'dense_regress_{}'.format(len(Config.class_names) + 1): class_loss_regr(len(Config.class_names))
+    },
+        metrics={"dense_class_{}".format(len(Config.class_names) + 1): 'accuracy',
+                 'dense_regress_{}'.format(len(Config.class_names) + 1): 'accuracy'},
+        optimizer=keras.optimizers.Adam(lr=lr)
+    )
+
+    now_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+    checkpoint_dir = os.path.join(Config.checkpoint_dir, str(model_name))
+    log_dir = os.path.join(Config.tensorboard_log_dir, str(model_name))
+    if not os.path.exists(checkpoint_dir):
+        os.mkdir(checkpoint_dir)
+    if not os.path.exists(log_dir):
+        os.mkdir(log_dir)
+    checkpoint_dir = os.path.join(checkpoint_dir, now_time)
+    log_dir = os.path.join(log_dir, now_time)
+    os.mkdir(checkpoint_dir)
+    os.mkdir(log_dir)
+
+    logging = TensorBoard(log_dir=log_dir)
+    checkpoint = ModelCheckpoint(
+        os.path.join(checkpoint_dir,
+                     'classifier_ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}-' + str(
+                         model_name) + '-classifier.h5'),
+        monitor='val_loss', save_weights_only=True, save_best_only=False, period=1)
+
+    classifier_model.fit_generator(
+        classifier_data_generator(annotation_path=Config.train_annotation_path,
+                                  model_name=model_name,
+                                  method=method,
+                                  use_generator=use_generator),
+        steps_per_epoch=1000,
+        epochs=500,
+        validation_data=classifier_data_generator(annotation_path=Config.valid_annotation_path,
+                                                  method=method,
+                                                  use_generator=use_generator,
+                                                  model_name=model_name),
+        validation_steps=200,
+        initial_epoch=start_epoch,
+        callbacks=[logging, checkpoint],
+        verbose=1)
+
+
 if __name__ == '__main__':
-    # rpn_train([os.path.join(Config.checkpoint_dir,
-    #                         "20200420_213637/classifier_ep004-loss0.557-val_loss0.488-PModel.MobileNetV2.h5"), ],
-    #           use_generator=True,
-    #           model_class=PModel.MobileNetV2, batch_size=2)
-    classifier_train([get_weight_file("rpn_ep027-loss0.228-val_loss0.088-PModel.VGG16.h5"), ],
-                     use_generator=True,
-                     model_class=PModel.VGG16, classifier_class=PClassifier.DenseBase, show_image=True)
-    # classifier_train([os.path.join(Config.checkpoint_dir,
-    #                                "20200420_231100/classifier_ep003-loss0.473-val_loss0.393-PModel.VGG16.h5"), ],
-    #                  use_generator=True, model_class=PModel.VGG16,
-    #                  freeze_base_layer=True)
-    # rpn_train([os.path.join(Config.weight_dir, "number_weight.h5"),
-    #            os.path.join(Config.weight_dir, "vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5"),
-    #            ],
-    #           use_generator=True,
-    #           model_class=PModel.VGG16, batch_size=1)
+    rpn_train(
+        rpn_weight_list=[get_weight_file('voc_weights.h5')],
+        model_name=ModelConfig.VGG16,
+        use_generator=True,
+        freeze_layers=False,
+        method=ImageProcessMethod.Reshape,
+        use_bfc=True)
+    # classifier_train(
+    #     rpn_weight_list=[get_weight_file('rpn_ep016-loss0.233-val_loss0.153-ModelConfig.VGG16_standard-rpn.h5')],
+    #     classifier_weight_list=[
+    #     ],
+    #     model_name=ModelConfig.VGG16,
+    #     method=ImageProcessMethod.Reshape,
+    #     use_generator=True,
+    #     run_on_laptop=False,
+    #     use_bfc=False,
+    #     freeze_base_layer=False
+    # )
+    pass
