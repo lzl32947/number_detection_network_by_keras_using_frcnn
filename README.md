@@ -1,8 +1,39 @@
+# Number detection network using Faster R-CNN
 
-the following are the trained model for number identification
-* Resnet 50
-    * os.path.join(Config.checkpoint_dir, "20200417_232828/rpn_ep005-loss0.221-val_loss0.151-rpn.h5")
-    * os.path.join(Config.checkpoint_dir,"20200420_165514/classifier_ep026-loss0.062-val_loss0.026-PModel.ResNet50.h5")
-* Resnet 101
-    * os.path.join(Config.checkpoint_dir,"20200420_114334/rpn_ep012-loss0.125-val_loss0.092-PModel.ResNet101.h5")
-    * os.path.join(Config.checkpoint_dir,"20200420_182004/classifier_ep034-loss0.091-val_loss0.011-PModel.ResNet101.h5")
+Author: Liu Zhilin      Lanzhou University
+
+This repo implement one number detection network with the structure of Faster R-CNN
+
+* Dependence
+```
+    keras > 2.0 
+    1.13 < tensorflow < 2.0
+```
+
+* Project structure
+```
+root
+├─config
+│   Configs.py          # Contain config of whole project
+│
+├─data                  # Contain data of project
+|  └─single_digits      # Contain single digit
+├─log
+│  ├─checkpoint         # Store checkpoint when train
+│  ├─tensorboard        # Store tensorboard record when train
+|  └─weight             # Contain the pre-trained weights
+├─model
+│  ├─image              # Store the image of model
+│  └─layers             # Contain the custom layers of SSD
+│  *.py                 # The concrete model
+├─other
+│  └─font               # Contain the font py drawing
+├─util                  # Contain the function that process the model/input/output
+│   image_generator.py  # The image generator functions
+│   image_util.py       # The drawing/resizing functions
+│   input_util.py       # The data pre-process functions before training
+│   output_util.py      # The data process functions that decode the output from the model
+├─train.py              # Function of training the model.
+└─predcit.py            # Function of predict on model.
+
+```
