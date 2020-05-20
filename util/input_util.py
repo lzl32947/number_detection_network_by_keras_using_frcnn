@@ -368,7 +368,7 @@ def encode_label_for_classifier(image_boxes, model_name):
                 continue
             else:
                 box_list.append(position)
-                label_list.append(0)
+                label_list.append(-1)
                 j += 1
     # X2 in format int (0, feature map size)
     X2 = np.array(box_list)
@@ -388,41 +388,32 @@ def encode_label_for_classifier(image_boxes, model_name):
     X2[:, 3] = X2[:, 3] - X2[:, 1]
 
     Y1 = np.zeros(shape=(len(box_list), 1 + len(models.class_names)), dtype=np.int)
-    Y2 = np.zeros(shape=(len(box_list), 8 * len(models.class_names)))
+    Y2 = np.zeros(shape=(len(box_list), 8 * len(models.class_names) + 1))
+    Y2[:, -1] = -1
 
     results = np.zeros(shape=(len(box_list), 6))
+    results[:, 4] = -1
     # results:
     # 0,1,2,3 -> xmin, ymin, xmax, ymax
     # 4 -> label
     # 5 -> iou
+
+    # box_list is the list for all boxes transformed from ROI, and should has length of classifier_train_batch
     for i in range(0, len(box_list)):
-        iou = calculate_iou(box_list[i], gt_list)
-
-        positive_index = iou > models.rpn_max_overlap
-        k = np.argwhere(positive_index > 0).tolist()
-        if len(k) == 0:
-            max_index = np.argmax(iou)
-            k.append(max_index)
-
-        for j in k:
-            box = encode_box(np.squeeze(gt_list[j]), np.squeeze(box_list[i]), models.classifier_variance)
-            if results[j, 5] < iou[j]:
-                results[j, 0:4] = box
-                results[j, 4] = 1
-                results[j, 5] = iou[j]
-                Y1[i, label_list[i]] = 1
-    index = np.max(Y1, axis=1) == 0
-    Y1[index, -1] = 1
-
-    for i in range(0, len(box_list)):
-        if results[i, 4] == 1:
-            Y2[i, 4 * label_list[i]:4 * (label_list[i] + 1)] = [1, 1, 1, 1]
-            Y2[i, 4 * len(models.class_names) + 4 * label_list[i]:4 * len(models.class_names) + 4 * (
-                    label_list[i] + 1)] = results[i, 0:4]
+        label = label_list[i]
+        if label != -1:
+            box = encode_box(np.squeeze(gt_list[i]), np.squeeze(box_list[i]), models.classifier_variance)
+            Y1[i, label] = 1
+            Y2[i, 4 * label:4 * (label + 1)] = [1, 1, 1, 1]
+            Y2[i, 4 * len(models.class_names) + 4 * label:4 * len(models.class_names) + 4 * (
+                    label + 1)] = box
+            Y2[i, -1] = label
+        else:
+            Y1[i, -1] = 1
 
     X2 = np.reshape(X2, (-1, models.classifier_train_batch, 4))
     Y1 = np.reshape(Y1, (-1, models.classifier_train_batch, len(models.class_names) + 1))
-    Y2 = np.reshape(Y2, (-1, models.classifier_train_batch, 8 * len(models.class_names)))
+    Y2 = np.reshape(Y2, (-1, models.classifier_train_batch, 8 * len(models.class_names) + 1))
     return X2, Y1, Y2
 
 
